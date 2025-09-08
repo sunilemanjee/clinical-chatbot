@@ -67,6 +67,10 @@ source ./setup_env.sh
 
 4. **Run the application:**
 ```bash
+# Option 1: Run with MCP (Model Context Protocol) integration
+./run_mcp_clinical_assistant.sh
+
+# Option 2: Run standard Flask application
 python -m flask run -h 0.0.0.0 -p 5000
 ```
 
@@ -82,6 +86,29 @@ To verify your setup is working correctly:
 
 ### Available Regions
 TTS Avatar is available in: Southeast Asia, North Europe, West Europe, Sweden Central, South Central US, East US 2, and West US 2.
+
+## MCP (Model Context Protocol) Integration
+
+The application now supports MCP integration for enhanced clinical assistance capabilities:
+
+### MCP Features
+- **Enhanced Clinical Context**: Access to structured clinical data and drug interaction information
+- **Function Calling**: AI can execute specific clinical functions like patient data retrieval and drug interaction checks
+- **Real-time Data Access**: Direct integration with clinical databases and knowledge bases
+- **Improved Accuracy**: Context-aware responses based on actual patient data
+
+### Running with MCP
+Use the MCP clinical assistant script for the full-featured experience:
+```bash
+./run_mcp_clinical_assistant.sh
+```
+
+This script will:
+1. Start the MCP server with clinical data access
+2. Launch the Flask application with MCP integration
+3. Enable advanced clinical functions and context-aware responses
+
+For more details about MCP integration, see [README_MCP.md](README_MCP.md).
 
 ### Key Components
 
