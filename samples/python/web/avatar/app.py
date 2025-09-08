@@ -543,6 +543,50 @@ def clearChatHistory() -> Response:
     return Response('Chat history cleared.', status=200)
 
 
+# The API route to load clinical patient data into Elasticsearch
+@app.route("/api/loadData", methods=["POST"])
+def loadData() -> Response:
+    client_id = uuid.UUID(request.headers.get('ClientId'))
+    print(f"Load data request received from client {client_id}")
+    
+    try:
+        import subprocess
+        import os
+        
+        # Get the directory where the script is located
+        script_dir = os.path.join(os.path.dirname(__file__), 'data')
+        script_path = os.path.join(script_dir, 'ingest_to_elasticsearch.sh')
+        
+        print(f"Executing script: {script_path}")
+        print(f"Working directory: {script_dir}")
+        
+        # Execute the ingestion script
+        result = subprocess.run(
+            ['bash', script_path],
+            cwd=script_dir,
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if result.returncode == 0:
+            print("Data ingestion completed successfully")
+            print(f"Script output: {result.stdout}")
+            return Response("Clinical patient data loaded successfully into Elasticsearch!", status=200)
+        else:
+            print(f"Data ingestion failed with return code: {result.returncode}")
+            print(f"Error output: {result.stderr}")
+            print(f"Standard output: {result.stdout}")
+            return Response(f"Data ingestion failed: {result.stderr}", status=500)
+            
+    except subprocess.TimeoutExpired:
+        print("Data ingestion timed out after 5 minutes")
+        return Response("Data ingestion timed out. Please try again.", status=500)
+    except Exception as e:
+        print(f"Error executing data ingestion script: {str(e)}")
+        return Response(f"Error loading data: {str(e)}", status=500)
+
+
 # The API route to disconnect the TTS avatar
 @app.route("/api/disconnectAvatar", methods=["POST"])
 def disconnectAvatar() -> Response:
@@ -709,6 +753,87 @@ def refreshSpeechToken() -> None:
                 headers={'Ocp-Apim-Subscription-Key': speech_key}).text
         time.sleep(60 * 9)
 
+
+# Known drug interactions database (simplified for demo)
+DRUG_INTERACTIONS = {
+    "Diazepam": {
+        "Meclizine": "⚠️ INTERACTION: Both cause drowsiness. Risk of excessive sedation.",
+        "Promethazine": "⚠️ INTERACTION: Both cause drowsiness. Risk of excessive sedation.",
+        "Ondansetron": "⚠️ INTERACTION: May increase risk of QT prolongation."
+    },
+    "Meclizine": {
+        "Diazepam": "⚠️ INTERACTION: Both cause drowsiness. Risk of excessive sedation.",
+        "Promethazine": "⚠️ INTERACTION: Both cause drowsiness. Risk of excessive sedation."
+    },
+    "Promethazine": {
+        "Diazepam": "⚠️ INTERACTION: Both cause drowsiness. Risk of excessive sedation.",
+        "Meclizine": "⚠️ INTERACTION: Both cause drowsiness. Risk of excessive sedation."
+    },
+    "Omeprazole": {
+        "Diazepam": "⚠️ INTERACTION: May increase Diazepam levels. Monitor for increased sedation."
+    }
+}
+
+def checkMedicationInteractions(new_medications: list, existing_medications: list) -> list:
+    """
+    Check for drug interactions between new and existing medications.
+    Returns a list of interaction warnings.
+    """
+    interactions = []
+    
+    for new_med in new_medications:
+        if new_med in DRUG_INTERACTIONS:
+            for existing_med in existing_medications:
+                if existing_med in DRUG_INTERACTIONS[new_med]:
+                    interactions.append(DRUG_INTERACTIONS[new_med][existing_med])
+    
+    return interactions
+
+def extractMedicationsFromText(text: str) -> list:
+    """
+    Extract medication names from text using simple pattern matching.
+    This is a basic implementation - in production, you'd use more sophisticated NLP.
+    """
+    # Common medication patterns
+    medications = []
+    text_lower = text.lower()
+    
+    # Check for common medications in the patient data
+    known_meds = ["Mucinex", "Ondansetron", "Meclizine", "Diazepam", "Omeprazole", "Promethazine"]
+    
+    for med in known_meds:
+        if med.lower() in text_lower:
+            medications.append(med)
+    
+    # Check for prescription patterns
+    import re
+    prescription_patterns = [
+        r"prescribed\s+([A-Z][a-z]+)",
+        r"prescribe\s+([A-Z][a-z]+)",
+        r"give\s+([A-Z][a-z]+)",
+        r"start\s+([A-Z][a-z]+)",
+        r"medication:\s*([A-Z][a-z]+)"
+    ]
+    
+    for pattern in prescription_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        medications.extend(matches)
+    
+    return list(set(medications))  # Remove duplicates
+
+def getPatientMedicationHistory(patient_data: dict) -> list:
+    """
+    Extract all medications from patient's history.
+    """
+    all_medications = []
+    
+    if patient_data and 'records' in patient_data:
+        for record in patient_data['records']:
+            drugs = record.get('drugs_prescribed', [])
+            if drugs and drugs != ["None"]:
+                all_medications.extend(drugs)
+    
+    return list(set(all_medications))  # Remove duplicates
 
 # Query patient data from Elasticsearch
 def queryPatientData(patient_name: str) -> dict:
@@ -956,6 +1081,30 @@ def handleUserQuery(user_query: str, client_id: uuid.UUID):
 
     messages.append(chat_message)
 
+    # Check for medication interactions if patient data is available
+    if patient_data and patient_data.get('success'):
+        # Extract medications from user query
+        new_medications = extractMedicationsFromText(user_query)
+        
+        if new_medications:
+            # Get patient's medication history
+            existing_medications = getPatientMedicationHistory(patient_data)
+            
+            # Check for interactions
+            interactions = checkMedicationInteractions(new_medications, existing_medications)
+            
+            if interactions:
+                # Add interaction warnings to the conversation
+                interaction_warning = " ".join(interactions)
+                print(f"🚨 Medication interactions detected: {interaction_warning}")
+                
+                # Add interaction warning as a system message
+                interaction_message = {
+                    'role': 'system',
+                    'content': f"MEDICATION INTERACTION ALERT: {interaction_warning} Please review before prescribing."
+                }
+                messages.append(interaction_message)
+
     # For 'on your data' scenario, chat API currently has long (4s+) latency
     # We return some quick reply here before the chat API returns to mitigate.
     if len(data_sources) > 0 and enable_quick_reply:
@@ -970,6 +1119,7 @@ def handleUserQuery(user_query: str, client_id: uuid.UUID):
         model=azure_openai_deployment_name,
         messages=messages,
         extra_body={'data_sources': data_sources} if len(data_sources) > 0 else None,
+        max_tokens=150,  # Limit response to approximately 2-3 sentences
         stream=True)
 
     is_first_chunk = True
@@ -1021,6 +1171,13 @@ def handleUserQuery(user_query: str, client_id: uuid.UUID):
             'content': tool_content
         }
         messages.append(tool_message)
+
+    # Enforce response length limit (maximum 20 words)
+    word_count = len(assistant_reply.split())
+    if word_count > 20:
+        words = assistant_reply.split()[:20]
+        assistant_reply = ' '.join(words) + '...'
+        print(f"⚠️ Response truncated from {word_count} to 20 words")
 
     assistant_message = {
         'role': 'assistant',

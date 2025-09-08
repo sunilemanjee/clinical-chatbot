@@ -1,92 +1,92 @@
 [
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2023-01-15",
-      "patient_complaint": "Persistent cough, low-grade fever, and fatigue for the past five days.",
-      "diagnosis": "Acute bronchitis.",
-      "doctor_notes": "Patient presents with a productive cough. Lungs sound clear, but there is some wheezing. Advised rest, hydration, and over-the-counter cough suppressants.",
-      "drugs_prescribed": ["Mucinex"],
-      "patient_age_at_visit": 35
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2023-04-20",
-      "patient_complaint": "Sharp pain in the lower back after lifting a heavy box.",
-      "diagnosis": "Lumbar strain.",
-      "doctor_notes": "Pain is localized to the lumbar region. No radiating pain or numbness. Recommended physical therapy and gentle stretching. Prescribed a muscle relaxant for short-term use.",
-      "drugs_prescribed": ["Cyclobenzaprine"],
-      "patient_age_at_visit": 35
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2023-08-10",
-      "patient_complaint": "Itchy, red rash on arms and legs. Suspects an allergic reaction to a new laundry detergent.",
-      "diagnosis": "Contact dermatitis.",
-      "doctor_notes": "Rash presents as erythematous and vesicular. Advised patient to discontinue use of new detergent and apply topical hydrocortisone cream.",
-      "drugs_prescribed": ["Hydrocortisone cream"],
-      "patient_age_at_visit": 35
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2023-11-25",
-      "patient_complaint": "Sore throat and body aches.",
-      "diagnosis": "Pharyngitis (viral).",
-      "doctor_notes": "Patient has a red and swollen throat with no signs of bacterial infection. Advised symptomatic relief with lozenges, warm liquids, and rest. No antibiotics prescribed.",
-      "drugs_prescribed": ["None"],
-      "patient_age_at_visit": 36
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2024-02-05",
-      "patient_complaint": "Headaches, more frequent and severe in the last month.",
-      "diagnosis": "Tension headaches.",
-      "doctor_notes": "Patient reports stress at work and has been clenching their jaw. Recommended stress-reduction techniques, mild exercise, and OTC pain relievers. Follow up if symptoms worsen.",
-      "drugs_prescribed": ["Ibuprofen"],
-      "patient_age_at_visit": 36
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2024-05-18",
-      "patient_complaint": "Foot pain, especially in the heel, upon waking up.",
-      "diagnosis": "Plantar fasciitis.",
-      "doctor_notes": "Tenderness upon palpation of the plantar fascia. Advised to wear supportive shoes, stretch the foot daily, and use ice packs.",
-      "drugs_prescribed": ["None"],
-      "patient_age_at_visit": 36
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2024-07-22",
-      "patient_complaint": "Dizziness and a feeling of being 'lightheaded'.",
-      "diagnosis": "Benign paroxysmal positional vertigo (BPPV).",
-      "doctor_notes": "Patient describes brief episodes of vertigo triggered by head movements. Performed Epley maneuver in-office, with good results. Advised to avoid sudden head movements.",
-      "drugs_prescribed": ["None"],
-      "patient_age_at_visit": 36
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2024-09-01",
-      "patient_complaint": "Persistent heartburn, especially after eating spicy food.",
-      "diagnosis": "Gastroesophageal reflux disease (GERD).",
-      "doctor_notes": "Discussed dietary and lifestyle modifications. Prescribed a proton pump inhibitor to reduce stomach acid production.",
-      "drugs_prescribed": ["Omeprazole"],
-      "patient_age_at_visit": 36
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2024-11-10",
-      "patient_complaint": "Sinus pressure and congestion.",
-      "diagnosis": "Acute sinusitis.",
-      "doctor_notes": "Patient's sinuses are tender to the touch. Advised saline nasal spray, steam inhalation, and prescribed a short course of antibiotics as symptoms have lasted over a week.",
-      "drugs_prescribed": ["Amoxicillin"],
-      "patient_age_at_visit": 36
-    },
-    {
-      "patient_name": "Jane Doe",
-      "date_of_visit": "2025-01-05",
-      "patient_complaint": "Routine annual check-up.",
-      "diagnosis": "Well-woman exam.",
-      "doctor_notes": "All vitals within normal range. Patient is in good health. Discussed importance of exercise and balanced diet. No new health concerns.",
-      "drugs_prescribed": ["None"],
-      "patient_age_at_visit": 37
-    }
-  ]
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2023-01-15",
+    "patient_complaint": "Persistent cough, low-grade fever, and fatigue for the past five days.",
+    "diagnosis": "Acute bronchitis.",
+    "doctor_notes": "Patient presents with a productive cough. Lungs sound clear, but there is some wheezing. Advised rest, hydration, and over-the-counter cough suppressants.",
+    "drugs_prescribed": ["Mucinex"],
+    "patient_age_at_visit": 35
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2023-04-20",
+    "patient_complaint": "Dizziness and a feeling of being 'off balance' with associated nausea.",
+    "diagnosis": "Benign paroxysmal positional vertigo (BPPV).",
+    "doctor_notes": "Patient describes brief episodes of vertigo triggered by head movements. Performed Epley maneuver in-office, with good results. Prescribed an antiemetic for nausea and advised to avoid sudden head movements.",
+    "drugs_prescribed": ["Ondansetron"],
+    "patient_age_at_visit": 35
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2023-08-10",
+    "patient_complaint": "Follow-up for dizziness, which has recurred and is causing significant nausea.",
+    "diagnosis": "Recurrence of BPPV.",
+    "doctor_notes": "Patient reports a return of vertigo symptoms. Re-performed Epley maneuver, which again relieved symptoms. Prescribed a short course of an antihistamine to manage the dizziness and nausea. Emphasized the importance of home exercises.",
+    "drugs_prescribed": ["Meclizine"],
+    "patient_age_at_visit": 35
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2023-11-25",
+    "patient_complaint": "Sore throat and body aches.",
+    "diagnosis": "Pharyngitis (viral).",
+    "doctor_notes": "Patient has a red and swollen throat with no signs of bacterial infection. Advised symptomatic relief with lozenges, warm liquids, and rest. No antibiotics prescribed.",
+    "drugs_prescribed": ["None"],
+    "patient_age_at_visit": 36
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2024-02-05",
+    "patient_complaint": "Headaches, more frequent and severe in the last month, sometimes accompanied by dizziness and lightheadedness.",
+    "diagnosis": "Tension headaches; possible link to prior vertigo.",
+    "doctor_notes": "Patient reports stress at work. Headaches and dizziness may be related to stress or a mild recurrence of BPPV. Advised stress-reduction techniques and OTC pain relievers. Prescribed a mild benzodiazepine for short-term use to help with anxiety and dizziness.",
+    "drugs_prescribed": ["Diazepam"],
+    "patient_age_at_visit": 36
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2024-05-18",
+    "patient_complaint": "Foot pain, especially in the heel, upon waking up.",
+    "diagnosis": "Plantar fasciitis.",
+    "doctor_notes": "Tenderness upon palpation of the plantar fascia. Advised to wear supportive shoes, stretch the foot daily, and use ice packs.",
+    "drugs_prescribed": ["None"],
+    "patient_age_at_visit": 36
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2024-07-22",
+    "patient_complaint": "Dizziness and a feeling of being 'lightheaded' with severe nausea.",
+    "diagnosis": "Benign paroxysmal positional vertigo (BPPV).",
+    "doctor_notes": "Patient describes brief episodes of vertigo triggered by head movements. Performed Epley maneuver in-office, with good results. Prescribed Meclizine to manage the severe nausea and spinning sensation.",
+    "drugs_prescribed": ["Meclizine"],
+    "patient_age_at_visit": 36
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2024-09-01",
+    "patient_complaint": "Persistent heartburn, especially after eating spicy food.",
+    "diagnosis": "Gastroesophageal reflux disease (GERD).",
+    "doctor_notes": "Discussed dietary and lifestyle modifications. Prescribed a proton pump inhibitor to reduce stomach acid production.",
+    "drugs_prescribed": ["Omeprazole"],
+    "patient_age_at_visit": 36
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "2025-01-05",
+    "patient_complaint": "Severe, sudden onset vertigo.",
+    "diagnosis": "Recurrence of BPPV.",
+    "doctor_notes": "Patient came in with a severe episode of vertigo, reporting the room was spinning. Performed Epley maneuver with some relief. Advised for a follow-up visit soon to monitor progress. Prescribed a stronger anti-dizzy medication.",
+    "drugs_prescribed": ["Promethazine"],
+    "patient_age_at_visit": 37
+  },
+  {
+    "patient_name": "Jane Doe",
+    "date_of_visit": "3-DAYS-AGO",
+    "patient_complaint": "Follow-up for persistent vertigo symptoms.",
+    "diagnosis": "Recurrence of BPPV, ongoing.",
+    "doctor_notes": "Patient reports some improvement but still experiences brief episodes of vertigo. Re-evaluated and re-performed the Epley maneuver. Emphasized consistency with home exercises and discussed potential vestibular rehabilitation therapy if symptoms persist. Refilled the prescription for Meclizine.",
+    "drugs_prescribed": ["Meclizine"],
+    "patient_age_at_visit": 37
+  }
+]

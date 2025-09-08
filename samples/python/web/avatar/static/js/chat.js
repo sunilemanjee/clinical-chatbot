@@ -411,6 +411,8 @@ function connectToAvatarService(peerConnection) {
             response.text().then(text => {
                 const remoteSdp = text
                 peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(atob(remoteSdp))))
+                // Hide the Load Data button when avatar session is successfully connected
+                document.getElementById('loadData').hidden = true
             })
         } else {
             document.getElementById('startSession').disabled = false;
@@ -610,6 +612,7 @@ window.startSession = () => {
     if (document.getElementById('useLocalVideoForIdle').checked) {
         document.getElementById('startSession').disabled = true
         document.getElementById('configuration').hidden = true
+        document.getElementById('loadData').hidden = true
         document.getElementById('microphone').disabled = false
         document.getElementById('stopSession').disabled = false
         document.getElementById('localVideo').hidden = false
@@ -654,6 +657,7 @@ window.stopSession = () => {
     document.getElementById('microphone').disabled = true
     document.getElementById('stopSession').disabled = true
     document.getElementById('configuration').hidden = false
+    document.getElementById('loadData').hidden = false
     document.getElementById('chatHistory').hidden = true
     document.getElementById('latencyLog').hidden = true
     document.getElementById('showTypeMessage').checked = false
@@ -711,6 +715,73 @@ window.clearChatHistory = () => {
         console.error('Error clearing chat history:', error)
         // Restore the chat history if there was an error
         alert('Failed to clear chat history. Please try again.')
+    })
+}
+
+window.loadData = () => {
+    console.log('Load Data button clicked')
+    lastInteractionTime = new Date()
+    
+    // Check if clientId is available
+    if (!clientId) {
+        console.error('ClientId not available yet. Please wait for page to load completely.')
+        alert('Please wait for the page to load completely before loading data.')
+        return
+    }
+    
+    // Disable the button and show loading state
+    const loadDataButton = document.getElementById('loadData')
+    const originalText = loadDataButton.innerHTML
+    loadDataButton.disabled = true
+    loadDataButton.innerHTML = 'Loading...'
+    
+    // Show loading message in chat history
+    const chatHistoryElement = document.getElementById('chatHistory')
+    chatHistoryElement.innerHTML = '<em style="color: #666;">Loading clinical patient data into Elasticsearch...</em>'
+    
+    fetch('/api/loadData', {
+        method: 'POST',
+        headers: {
+            'ClientId': clientId
+        },
+        body: ''
+    })
+    .then(response => {
+        console.log('Load data response:', response.status, response.statusText)
+        if (response.ok) {
+            return response.text()
+        } else {
+            throw new Error(`Failed to load data: ${response.status} ${response.statusText}`)
+        }
+    })
+    .then(result => {
+        console.log('Data loaded successfully:', result)
+        // Show success message
+        chatHistoryElement.innerHTML = '<em style="color: #28a745;">✅ Clinical patient data loaded successfully into Elasticsearch!</em>'
+        
+        // Clear the success message after 3 seconds
+        setTimeout(() => {
+            if (chatHistoryElement.innerHTML.includes('Clinical patient data loaded successfully')) {
+                chatHistoryElement.innerHTML = ''
+            }
+        }, 3000)
+    })
+    .catch(error => {
+        console.error('Error loading data:', error)
+        // Show error message
+        chatHistoryElement.innerHTML = '<em style="color: #dc3545;">❌ Failed to load data. Please check the server logs.</em>'
+        
+        // Clear the error message after 5 seconds
+        setTimeout(() => {
+            if (chatHistoryElement.innerHTML.includes('Failed to load data')) {
+                chatHistoryElement.innerHTML = ''
+            }
+        }, 5000)
+    })
+    .finally(() => {
+        // Re-enable the button
+        loadDataButton.disabled = false
+        loadDataButton.innerHTML = originalText
     })
 }
 

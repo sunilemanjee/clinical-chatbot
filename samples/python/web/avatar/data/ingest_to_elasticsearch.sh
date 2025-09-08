@@ -49,7 +49,7 @@ import json
 import sys
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 import base64
 
 # Configuration
@@ -202,6 +202,12 @@ def load_and_ingest_data():
         current_time = datetime.utcnow().isoformat()
         
         for i, record in enumerate(data):
+            # Replace "3-DAYS-AGO" with actual date that is 3 days ago
+            if record.get('date_of_visit') == '3-DAYS-AGO':
+                three_days_ago = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
+                record['date_of_visit'] = three_days_ago
+                print_status(f"✓ Replaced '3-DAYS-AGO' with actual date: {three_days_ago}", "INFO")
+            
             # Add ingestion timestamp
             record['ingestion_timestamp'] = current_time
             
