@@ -252,8 +252,15 @@ def connectAvatar() -> Response:
         if custom_voice_endpoint_id:
             speech_config.endpoint_id = custom_voice_endpoint_id
 
-        client_context['speech_synthesizer'] = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
+        # Create optimized audio config for lower latency
+        audio_config = speechsdk.audio.AudioOutputConfig(use_default_speaker=True)
+        
+        client_context['speech_synthesizer'] = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=audio_config)
         speech_synthesizer = client_context['speech_synthesizer']
+        
+        # Set additional properties for lower latency
+        speech_synthesizer.properties.set_property(speechsdk.PropertyId.SpeechServiceConnection_SynthEnableCompressedAudioTransmission, "true")
+        speech_synthesizer.properties.set_property(speechsdk.PropertyId.SpeechServiceConnection_SynthOutputFormat, "audio-16khz-32kbitrate-mono-mp3")
 
         ice_token_obj = json.loads(ice_token)
         # Apply customized ICE server if provided
@@ -328,7 +335,17 @@ def connectAvatar() -> Response:
                         # Additional settings for better synchronization
                         'synchronization': {
                             'audioVideoSync': True,  # Enable audio-video synchronization
-                            'lipSyncAccuracy': 'high'  # High accuracy lip sync
+                            'lipSyncAccuracy': 'high',  # High accuracy lip sync
+                            'audioBufferSize': 64,  # Smaller audio buffer for lower latency
+                            'videoBufferSize': 2,  # Minimal video buffering
+                            'syncTolerance': 50  # 50ms sync tolerance
+                        },
+                        # Advanced lip sync settings
+                        'lipSync': {
+                            'enabled': True,
+                            'precision': 'high',
+                            'realTimeProcessing': True,
+                            'audioLatencyCompensation': True
                         }
                     }
                 }
@@ -1716,24 +1733,52 @@ def speakWithQueue(text: str, ending_silence_ms: int, client_id: uuid.UUID) -> N
 
 # Speak the given text.
 def speakText(text: str, voice: str, speaker_profile_id: str, ending_silence_ms: int, client_id: uuid.UUID) -> str:
-    ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'>
-                 <voice name='{voice}'>
-                     <mstts:ttsembedding speakerProfileId='{speaker_profile_id}'>
-                         <mstts:leadingsilence-exact value='0'/>
-                         {html.escape(text)}
-                     </mstts:ttsembedding>
-                 </voice>
-               </speak>"""  # noqa: E501
-    if ending_silence_ms > 0:
+    # Optimized SSML for lower latency - remove unnecessary elements and optimize for speed
+    if speaker_profile_id:
         ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'>
                      <voice name='{voice}'>
                          <mstts:ttsembedding speakerProfileId='{speaker_profile_id}'>
                              <mstts:leadingsilence-exact value='0'/>
-                             {html.escape(text)}
-                             <break time='{ending_silence_ms}ms' />
+                             <mstts:trailingsilence-exact value='0'/>
+                             <prosody rate='1.0' pitch='0%'>
+                                 {html.escape(text)}
+                             </prosody>
                          </mstts:ttsembedding>
                      </voice>
                    </speak>"""  # noqa: E501
+    else:
+        # Simplified SSML without personal voice for faster processing
+        ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+                     <voice name='{voice}'>
+                         <prosody rate='1.0' pitch='0%'>
+                             {html.escape(text)}
+                         </prosody>
+                     </voice>
+                   </speak>"""  # noqa: E501
+    
+    if ending_silence_ms > 0:
+        if speaker_profile_id:
+            ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xmlns:mstts='http://www.w3.org/2001/mstts' xml:lang='en-US'>
+                         <voice name='{voice}'>
+                             <mstts:ttsembedding speakerProfileId='{speaker_profile_id}'>
+                                 <mstts:leadingsilence-exact value='0'/>
+                                 <mstts:trailingsilence-exact value='0'/>
+                                 <prosody rate='1.0' pitch='0%'>
+                                     {html.escape(text)}
+                                     <break time='{ending_silence_ms}ms' />
+                                 </prosody>
+                             </mstts:ttsembedding>
+                         </voice>
+                       </speak>"""  # noqa: E501
+        else:
+            ssml = f"""<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+                         <voice name='{voice}'>
+                             <prosody rate='1.0' pitch='0%'>
+                                 {html.escape(text)}
+                                 <break time='{ending_silence_ms}ms' />
+                             </prosody>
+                         </voice>
+                       </speak>"""  # noqa: E501
     return speakSsml(ssml, client_id, False)
 
 

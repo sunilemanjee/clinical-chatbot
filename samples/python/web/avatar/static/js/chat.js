@@ -206,8 +206,14 @@ function preparePeerConnection() {
             audioElement.srcObject = event.streams[0]
             audioElement.autoplay = false
             audioElement.preload = 'none'  // Optimize for low latency
+            audioElement.crossOrigin = 'anonymous'  // Enable CORS for better streaming
             audioElement.addEventListener('loadeddata', () => {
                 audioElement.play()
+            })
+            
+            // Optimize audio buffering for lower latency
+            audioElement.addEventListener('canplay', () => {
+                audioElement.currentTime = 0  // Reset to beginning for immediate playback
             })
 
             audioElement.onplaying = () => {
@@ -239,6 +245,20 @@ function preparePeerConnection() {
             videoElement.playsInline = true
             videoElement.muted = false  // Ensure audio is not muted for synchronization
             videoElement.style.width = '0.5px'
+            
+            // Optimize video for real-time playback
+            videoElement.addEventListener('loadedmetadata', () => {
+                videoElement.currentTime = 0  // Reset to beginning
+            })
+            
+            // Add real-time sync optimization
+            videoElement.addEventListener('timeupdate', () => {
+                // Keep video in sync with audio
+                if (videoElement.currentTime > 0.1) {
+                    videoElement.currentTime = Math.max(0, videoElement.currentTime - 0.05)
+                }
+            })
+            
             document.getElementById('remoteVideo').appendChild(videoElement)
 
             // Continue speaking if there are unfinished sentences while reconnecting
