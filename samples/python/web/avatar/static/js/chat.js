@@ -56,6 +56,7 @@ function connectAvatar() {
 
 // Create speech recognizer
 function createSpeechRecognizer() {
+    console.log('Creating speech recognizer...')
     fetch('/api/getSpeechToken', {
         method: 'GET',
     })
@@ -77,10 +78,15 @@ function createSpeechRecognizer() {
                 var sttLocales = document.getElementById('sttLocales').value.split(',')
                 var autoDetectSourceLanguageConfig = SpeechSDK.AutoDetectSourceLanguageConfig.fromLanguages(sttLocales)
                 speechRecognizer = SpeechSDK.SpeechRecognizer.FromConfig(speechRecognitionConfig, autoDetectSourceLanguageConfig, SpeechSDK.AudioConfig.fromDefaultMicrophoneInput())
+                console.log('Speech recognizer created successfully')
             })
         } else {
+            console.error(`Failed fetching speech token: ${response.status} ${response.statusText}`)
             throw new Error(`Failed fetching speech token: ${response.status} ${response.statusText}`)
         }
+    })
+    .catch(error => {
+        console.error('Error creating speech recognizer:', error)
     })
 }
 
@@ -682,6 +688,7 @@ window.clearChatHistory = () => {
 }
 
 window.microphone = () => {
+    console.log('Microphone button clicked')
     lastInteractionTime = new Date()
     if (document.getElementById('microphone').innerHTML === 'Stop Microphone') {
         // Stop microphone for websocket mode
@@ -742,13 +749,18 @@ window.microphone = () => {
         const audioWorkletScriptBlob = new Blob([audioWorkletScript], { type: 'application/javascript; charset=utf-8' })
         const audioWorkletScriptUrl = URL.createObjectURL(audioWorkletScriptBlob)
 
+        const systemPrompt = document.getElementById('prompt').value
+        console.log('System prompt length:', systemPrompt.length)
+        
         fetch('/api/connectSTT', {
             method: 'POST',
             headers: {
                 'ClientId': clientId,
-                'SystemPrompt': document.getElementById('prompt').value
+                'Content-Type': 'application/json'
             },
-            body: ''
+            body: JSON.stringify({
+                'SystemPrompt': systemPrompt
+            })
         })
         .then(response => {
             document.getElementById('microphone').disabled = false
@@ -812,6 +824,15 @@ window.microphone = () => {
     }
 
     document.getElementById('microphone').disabled = true
+    
+    // Check if speech recognizer is initialized
+    if (!speechRecognizer) {
+        console.error('Speech recognizer is not initialized!')
+        document.getElementById('microphone').disabled = false
+        return
+    }
+    
+    console.log('Starting speech recognition...')
     speechRecognizer.recognizing = async (s, e) => {
         if (isFirstRecognizingEvent && isSpeaking) {
             window.stopSpeaking()

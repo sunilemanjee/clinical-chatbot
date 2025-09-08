@@ -96,6 +96,19 @@ def chatView():
     return render_template("chat.html", methods=["GET"], client_id=initializeClient(), enable_websockets=enable_websockets)
 
 
+# The API route to get the system prompt from prompt.md
+@app.route("/api/getSystemPrompt", methods=["GET"])
+def getSystemPrompt() -> Response:
+    try:
+        with open('prompt.md', 'r', encoding='utf-8') as file:
+            prompt_content = file.read()
+        return Response(prompt_content, status=200, mimetype='text/plain')
+    except FileNotFoundError:
+        return Response("System prompt file not found", status=404)
+    except Exception as e:
+        return Response(f"Error reading system prompt: {str(e)}", status=500)
+
+
 # The API route to get the speech token
 @app.route("/api/getSpeechToken", methods=["GET"])
 def getSpeechToken() -> Response:
@@ -192,8 +205,16 @@ def connectAvatar() -> Response:
                 'Password': ice_server_password
             }
         local_sdp = request.data.decode('utf-8')
-        avatar_character = request.headers.get('AvatarCharacter')
-        avatar_style = request.headers.get('AvatarStyle')
+        
+        # Debug: Print all headers
+        print("Request headers:")
+        for header, value in request.headers.items():
+            print(f"  {header}: {value}")
+        
+        avatar_character = request.headers.get('AvatarCharacter') or 'lisa'
+        avatar_style = request.headers.get('AvatarStyle') or 'casual-sitting'
+        # Debug: Print avatar configuration values
+        print(f"Avatar config - Character: {avatar_character}, Style: {avatar_style}")
         background_color = '#FFFFFFFF' if request.headers.get('BackgroundColor') is None else request.headers.get('BackgroundColor')
         background_image_url = request.headers.get('BackgroundImageUrl')
         is_custom_avatar = request.headers.get('IsCustomAvatar')
@@ -226,7 +247,11 @@ def connectAvatar() -> Response:
                                 'y': 1080
                             }
                         },
-                        'bitrate': 1000000
+                        'bitrate': 1000000,
+                        # Optimize for low latency
+                        'frameRate': 30,
+                        'keyframeInterval': 30,
+                        'latencyMode': 'ultraLowLatency'
                     },
                     'talkingAvatar': {
                         'customized': is_custom_avatar.lower() == 'true',
@@ -242,6 +267,9 @@ def connectAvatar() -> Response:
                 }
             }
         }
+        
+        # Debug: Print the final avatar config
+        print(f"Final avatar config: {json.dumps(avatar_config, indent=2)}")
 
         connection = speechsdk.Connection.from_speech_synthesizer(speech_synthesizer)
         connection.connected.connect(lambda evt: print('TTS Avatar service connected.'))
@@ -271,10 +299,29 @@ def connectAvatar() -> Response:
         turn_start_message = speech_synthesizer.properties.get_property_by_name('SpeechSDKInternal-ExtraTurnStartMessage')
         remoteSdp = json.loads(turn_start_message)['webrtc']['connectionString']
 
+        # Initialize chat context and send initial greeting asking for patient name
+        initializeChatContext("", client_id)
+        client_context['chat_initiated'] = True
+        
+        # Send initial greeting asking for patient name
+        initial_greeting = "Hello! I'm your clinical assistant. To get started, could you please provide me with the patient's name?"
+        if enable_websockets:
+            socketio.emit("response", {'path': 'api.chat', 'chatResponse': 'Assistant: ' + initial_greeting}, room=client_id)
+            # Also speak the greeting
+            speakWithQueue(initial_greeting, 0, client_id)
+        else:
+            # For non-websocket mode, we'll need to handle this differently
+            # The greeting will be sent when the first user interaction occurs
+            client_context['initial_greeting_sent'] = False
+            client_context['initial_greeting'] = initial_greeting
+
         return Response(remoteSdp, status=200)
 
     except Exception as e:
-        return Response(f"Result ID: {speech_sythesis_result.result_id}. Error message: {e}", status=400)
+        error_msg = f"Error message: {e}"
+        if 'speech_sythesis_result' in locals():
+            error_msg = f"Result ID: {speech_sythesis_result.result_id}. {error_msg}"
+        return Response(error_msg, status=400)
 
 
 # The API route to connect the STT service
@@ -283,7 +330,14 @@ def connectSTT() -> Response:
     client_id = uuid.UUID(request.headers.get('ClientId'))
     # disconnect STT if already connected
     disconnectSttInternal(client_id)
-    system_prompt = request.headers.get('SystemPrompt')
+    
+    # Get SystemPrompt from request body if available, otherwise from header
+    if request.content_type == 'application/json':
+        data = request.get_json()
+        system_prompt = data.get('SystemPrompt') if data else None
+    else:
+        system_prompt = request.headers.get('SystemPrompt')
+    
     client_context = client_contexts[client_id]
     try:
         if speech_private_endpoint:
@@ -337,6 +391,16 @@ def connectSTT() -> Response:
                     if not chat_initiated:
                         initializeChatContext(system_prompt, client_id)
                         client_context['chat_initiated'] = True
+                    
+                    # Check if we need to send initial greeting for STT mode
+                    initial_greeting_sent = client_context.get('initial_greeting_sent', True)
+                    initial_greeting = client_context.get('initial_greeting', '')
+                    
+                    # If this is the first interaction and we have an initial greeting, send it first
+                    if not initial_greeting_sent and initial_greeting:
+                        client_context['initial_greeting_sent'] = True
+                        socketio.emit("response", {'path': 'api.chat', 'chatResponse': 'Assistant: ' + initial_greeting + '\n\n'}, room=client_id)
+                    
                     first_response_chunk = True
                     for chat_response in handleUserQuery(user_query, client_id):
                         if first_response_chunk:
@@ -406,8 +470,23 @@ def chat() -> Response:
     if not chat_initiated:
         initializeChatContext(request.headers.get('SystemPrompt'), client_id)
         client_context['chat_initiated'] = True
+    
+    # Check if we need to send initial greeting for non-websocket mode
+    initial_greeting_sent = client_context.get('initial_greeting_sent', True)
+    initial_greeting = client_context.get('initial_greeting', '')
+    
     user_query = request.data.decode('utf-8')
-    return Response(handleUserQuery(user_query, client_id), mimetype='text/plain', status=200)
+    
+    # If this is the first interaction and we have an initial greeting, send it first
+    if not initial_greeting_sent and initial_greeting:
+        client_context['initial_greeting_sent'] = True
+        # Create a generator that yields the greeting first, then the user query response
+        def combined_response():
+            yield 'Assistant: ' + initial_greeting + '\n\n'
+            yield from handleUserQuery(user_query, client_id)
+        return Response(combined_response(), mimetype='text/plain', status=200)
+    else:
+        return Response(handleUserQuery(user_query, client_id), mimetype='text/plain', status=200)
 
 
 # The API route to continue speaking the unfinished sentences
@@ -496,7 +575,18 @@ def handleWsMessage(message):
         if not chat_initiated:
             initializeChatContext(message.get('systemPrompt'), client_id)
             client_context['chat_initiated'] = True
+        
+        # Check if we need to send initial greeting for websocket mode
+        initial_greeting_sent = client_context.get('initial_greeting_sent', True)
+        initial_greeting = client_context.get('initial_greeting', '')
+        
         user_query = message.get('userQuery')
+        
+        # If this is the first interaction and we have an initial greeting, send it first
+        if not initial_greeting_sent and initial_greeting:
+            client_context['initial_greeting_sent'] = True
+            socketio.emit("response", {'path': 'api.chat', 'chatResponse': 'Assistant: ' + initial_greeting + '\n\n'}, room=client_id)
+        
         first_response_chunk = True
         for chat_response in handleUserQuery(user_query, client_id):
             if first_response_chunk:
@@ -531,7 +621,9 @@ def initializeClient() -> uuid.UUID:
         'speaking_text': None,  # The text that the avatar is speaking
         'spoken_text_queue': [],  # Queue to store the spoken text
         'speaking_thread': None,  # The thread to speak the spoken text queue
-        'last_speak_time': None  # The last time the avatar spoke
+        'last_speak_time': None,  # The last time the avatar spoke
+        'initial_greeting_sent': False,  # Flag to indicate if initial greeting has been sent
+        'initial_greeting': None  # The initial greeting message
     }
     return client_id
 
@@ -832,3 +924,9 @@ speechTokenRefereshThread.start()
 iceTokenRefreshThread = threading.Thread(target=refreshIceToken)
 iceTokenRefreshThread.daemon = True
 iceTokenRefreshThread.start()
+
+# Wait for initial ICE token to be available
+print("Waiting for initial ICE token...")
+while not ice_token:
+    time.sleep(1)
+print("ICE token initialized successfully!")

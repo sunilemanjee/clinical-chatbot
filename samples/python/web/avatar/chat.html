@@ -21,7 +21,7 @@
   <label style="font-size: medium;" for="azureOpenAIDeploymentName">Azure OpenAI Deployment Name:</label>
   <input id="azureOpenAIDeploymentName" type="text" size="32" style="font-size: medium;" /><br />
   <label style="font-size: medium;"  for="prompt">System Prompt:</label><br/>
-  <textarea id="prompt" style="max-width: 640px;">You are an AI assistant that helps people find information.</textarea>
+  <textarea id="prompt" style="max-width: 640px;" placeholder="Loading system prompt..."></textarea>
   <div style="background-color: white; width: 300px;">
     <input type="checkbox" id="enableOyd" onchange="window.updataEnableOyd()">Enable On Your Data</input><br />
   </div>
@@ -86,7 +86,11 @@
         overflow: hidden;" hidden></textarea>
   </div>
   <div id="localVideo" hidden>
-    <video src="{{ url_for('static', filename='video/lisa-casual-sitting-idle.mp4') }}" autoplay loop muted></video>
+    <video autoplay loop muted>
+      <source src="{{ url_for('static', filename='video/lisa-casual-sitting-idle.mp4') }}" type="video/mp4">
+      <!-- Fallback if video is not available -->
+      <p>Video not available</p>
+    </video>
   </div>
   <div id="remoteVideo"></div>
 </div>
@@ -95,5 +99,30 @@
   <input type="checkbox" id="showTypeMessage" onchange="window.updateTypeMessageBox()" disabled>Type Message</input><br />
 </div>
 <textarea id="userMessageBox" style="max-width: 960px; height: 40px" hidden></textarea><br/>
+
+<script>
+// Load system prompt from prompt.md file when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadSystemPrompt();
+});
+
+function loadSystemPrompt() {
+    fetch('/api/getSystemPrompt')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to load system prompt: ${response.status} ${response.statusText}`);
+            }
+            return response.text();
+        })
+        .then(promptContent => {
+            document.getElementById('prompt').value = promptContent;
+        })
+        .catch(error => {
+            console.error('Error loading system prompt:', error);
+            document.getElementById('prompt').value = 'Error loading system prompt. Please check the server logs.';
+        });
+}
+</script>
+
 </body>
 </html>
