@@ -1,0 +1,77 @@
+[
+    {
+      "primary_drug": "Mucinex",
+      "negative_drug_interactions": [
+        "Amoxicillin",
+        "Omeprazole"
+      ]
+    },
+    {
+      "primary_drug": "Cyclobenzaprine",
+      "negative_drug_interactions": [
+        "Meclizine",
+        "Diazepam",
+        "Promethazine"
+      ]
+    },
+    {
+      "primary_drug": "Hydrocortisone cream",
+      "negative_drug_interactions": [
+        "None"
+      ]
+    },
+    {
+      "primary_drug": "Ibuprofen",
+      "negative_drug_interactions": [
+        "Amoxicillin",
+        "Omeprazole"
+      ]
+    },
+    {
+      "primary_drug": "Ondansetron",
+      "negative_drug_interactions": [
+        "Meclizine",
+        "Promethazine"
+      ]
+    },
+    {
+      "primary_drug": "Omeprazole",
+      "negative_drug_interactions": [
+        "Ibuprofen",
+        "Amoxicillin"
+      ]
+    },
+    {
+      "primary_drug": "Amoxicillin",
+      "negative_drug_interactions": [
+        "Ibuprofen",
+        "Omeprazole"
+      ]
+    },
+    {
+      "primary_drug": "Meclizine",
+      "negative_drug_interactions": [
+        "Cyclobenzaprine",
+        "Diazepam",
+        "Ondansetron",
+        "Promethazine"
+      ]
+    },
+    {
+      "primary_drug": "Promethazine",
+      "negative_drug_interactions": [
+        "Cyclobenzaprine",
+        "Ondansetron",
+        "Diazepam",
+        "Meclizine"
+      ]
+    },
+    {
+      "primary_drug": "Diazepam",
+      "negative_drug_interactions": [
+        "Cyclobenzaprine",
+        "Meclizine",
+        "Promethazine"
+      ]
+    }
+  ]

@@ -13,7 +13,10 @@ NC='\033[0m' # No Color
 
 # Configuration
 INDEX_NAME="clinical-patient-data"
-DATA_FILE="clinical-patient-data"
+DATA_FILE="clinical-patient-data.json"
+DRUG_INTERACTIONS_INDEX_NAME="drug_interactions"
+DRUG_INTERACTIONS_DATA_FILE="drug-interactions-data.json"
+DRUG_INTERACTIONS_MAPPING_FILE="drug-interactions-mapping.json"
 ENV_FILE="../variables.env"
 
 echo -e "${YELLOW}Starting Clinical Patient Data Ingestion to Elasticsearch...${NC}"
@@ -56,7 +59,10 @@ import base64
 ELASTIC_URL = os.environ.get('ELASTIC_URL')
 ELASTIC_API_KEY = os.environ.get('ELASTIC_API_KEY')
 INDEX_NAME = 'clinical-patient-data'
-DATA_FILE = 'clinical-patient-data'
+DATA_FILE = 'clinical-patient-data.json'
+DRUG_INTERACTIONS_INDEX_NAME = 'drug_interactions'
+DRUG_INTERACTIONS_DATA_FILE = 'drug-interactions-data.json'
+DRUG_INTERACTIONS_MAPPING_FILE = 'drug-interactions-mapping.json'
 
 def print_status(message, status="INFO"):
     colors = {
@@ -89,7 +95,7 @@ def test_elasticsearch_connection():
         print_status(f"✗ Elasticsearch connection error: {str(e)}", "ERROR")
         return False
 
-def delete_index_if_exists():
+def delete_index_if_exists(index_name):
     """Delete the index if it exists"""
     try:
         headers = {
@@ -98,18 +104,18 @@ def delete_index_if_exists():
         }
         
         # Check if index exists and delete it
-        response = requests.head(f"{ELASTIC_URL}/{INDEX_NAME}", headers=headers)
+        response = requests.head(f"{ELASTIC_URL}/{index_name}", headers=headers)
         
         if response.status_code == 200:
             # Index exists, delete it
-            delete_response = requests.delete(f"{ELASTIC_URL}/{INDEX_NAME}", headers=headers)
+            delete_response = requests.delete(f"{ELASTIC_URL}/{index_name}", headers=headers)
             if delete_response.status_code in [200, 404]:  # 404 means already deleted
-                print_status(f"✓ Existing index '{INDEX_NAME}' deleted successfully", "SUCCESS")
+                print_status(f"✓ Existing index '{index_name}' deleted successfully", "SUCCESS")
             else:
                 print_status(f"✗ Failed to delete existing index: {delete_response.status_code} - {delete_response.text}", "ERROR")
                 return False
         else:
-            print_status(f"✓ Index '{INDEX_NAME}' does not exist, no deletion needed", "INFO")
+            print_status(f"✓ Index '{index_name}' does not exist, no deletion needed", "INFO")
             
         return True
         
@@ -181,6 +187,39 @@ def create_index():
         
     except Exception as e:
         print_status(f"✗ Error creating index: {str(e)}", "ERROR")
+        return False
+
+def create_drug_interactions_index():
+    """Create drug interactions index with mapping from file"""
+    try:
+        headers = {
+            'Authorization': f'ApiKey {ELASTIC_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Read mapping from file
+        with open(DRUG_INTERACTIONS_MAPPING_FILE, 'r') as f:
+            mapping = json.load(f)
+        
+        response = requests.put(f"{ELASTIC_URL}/{DRUG_INTERACTIONS_INDEX_NAME}", 
+                              headers=headers, 
+                              data=json.dumps(mapping))
+        
+        if response.status_code in [200, 201]:
+            print_status(f"✓ Drug interactions index '{DRUG_INTERACTIONS_INDEX_NAME}' created successfully", "SUCCESS")
+            return True
+        else:
+            print_status(f"✗ Failed to create drug interactions index: {response.status_code} - {response.text}", "ERROR")
+            return False
+        
+    except FileNotFoundError:
+        print_status(f"✗ Mapping file '{DRUG_INTERACTIONS_MAPPING_FILE}' not found", "ERROR")
+        return False
+    except json.JSONDecodeError as e:
+        print_status(f"✗ Invalid JSON in mapping file: {str(e)}", "ERROR")
+        return False
+    except Exception as e:
+        print_status(f"✗ Error creating drug interactions index: {str(e)}", "ERROR")
         return False
 
 def load_and_ingest_data():
@@ -263,6 +302,80 @@ def load_and_ingest_data():
         print_status(f"✗ Error during data ingestion: {str(e)}", "ERROR")
         return False
 
+def load_and_ingest_drug_interactions_data():
+    """Load drug interactions data from file and ingest into Elasticsearch"""
+    try:
+        # Read and parse JSON data
+        with open(DRUG_INTERACTIONS_DATA_FILE, 'r') as f:
+            data = json.load(f)
+        
+        print_status(f"✓ Loaded {len(data)} drug interaction records from {DRUG_INTERACTIONS_DATA_FILE}", "SUCCESS")
+        
+        headers = {
+            'Authorization': f'ApiKey {ELASTIC_API_KEY}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Prepare bulk request
+        bulk_data = []
+        current_time = datetime.utcnow().isoformat()
+        
+        for i, record in enumerate(data):
+            # Add ingestion timestamp
+            record['ingestion_timestamp'] = current_time
+            
+            # Create bulk index operation
+            index_op = {
+                "index": {
+                    "_index": DRUG_INTERACTIONS_INDEX_NAME,
+                    "_id": f"drug_interaction_{i+1}_{record['primary_drug'].lower().replace(' ', '_')}"
+                }
+            }
+            
+            bulk_data.append(json.dumps(index_op))
+            bulk_data.append(json.dumps(record))
+        
+        # Send bulk request
+        bulk_payload = '\n'.join(bulk_data) + '\n'
+        
+        print_status("Uploading drug interactions data to Elasticsearch...", "INFO")
+        
+        response = requests.post(f"{ELASTIC_URL}/_bulk", 
+                               headers=headers, 
+                               data=bulk_payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            if result.get('errors', False):
+                print_status("⚠ Some drug interaction documents failed to index:", "WARNING")
+                for item in result.get('items', []):
+                    if 'index' in item and 'error' in item['index']:
+                        print_status(f"  - {item['index']['error']}", "WARNING")
+            else:
+                print_status(f"✓ Successfully indexed {len(data)} drug interaction documents", "SUCCESS")
+                
+            # Print summary
+            indexed = sum(1 for item in result.get('items', []) 
+                         if 'index' in item and item['index'].get('status') in [200, 201])
+            print_status(f"✓ Total drug interaction documents indexed: {indexed}/{len(data)}", "SUCCESS")
+            
+        else:
+            print_status(f"✗ Drug interactions bulk indexing failed: {response.status_code} - {response.text}", "ERROR")
+            return False
+            
+        return True
+        
+    except FileNotFoundError:
+        print_status(f"✗ Drug interactions data file '{DRUG_INTERACTIONS_DATA_FILE}' not found", "ERROR")
+        return False
+    except json.JSONDecodeError as e:
+        print_status(f"✗ Invalid JSON in drug interactions data file: {str(e)}", "ERROR")
+        return False
+    except Exception as e:
+        print_status(f"✗ Error during drug interactions data ingestion: {str(e)}", "ERROR")
+        return False
+
 def main():
     """Main execution function"""
     print_status("Starting Elasticsearch ingestion process...", "INFO")
@@ -271,20 +384,43 @@ def main():
     if not test_elasticsearch_connection():
         sys.exit(1)
     
-    # Delete existing index if it exists
-    if not delete_index_if_exists():
+    # Process Clinical Patient Data
+    print_status("Processing Clinical Patient Data...", "INFO")
+    
+    # Delete existing clinical patient data index if it exists
+    if not delete_index_if_exists(INDEX_NAME):
         sys.exit(1)
     
-    # Create new index
+    # Create new clinical patient data index
     if not create_index():
         sys.exit(1)
     
-    # Load and ingest data
+    # Load and ingest clinical patient data
     if not load_and_ingest_data():
         sys.exit(1)
     
-    print_status("✓ Data ingestion completed successfully!", "SUCCESS")
-    print_status(f"You can now search your data at: {ELASTIC_URL}/{INDEX_NAME}/_search", "INFO")
+    print_status("✓ Clinical patient data ingestion completed successfully!", "SUCCESS")
+    
+    # Process Drug Interactions Data
+    print_status("Processing Drug Interactions Data...", "INFO")
+    
+    # Delete existing drug interactions index if it exists
+    if not delete_index_if_exists(DRUG_INTERACTIONS_INDEX_NAME):
+        sys.exit(1)
+    
+    # Create new drug interactions index
+    if not create_drug_interactions_index():
+        sys.exit(1)
+    
+    # Load and ingest drug interactions data
+    if not load_and_ingest_drug_interactions_data():
+        sys.exit(1)
+    
+    print_status("✓ Drug interactions data ingestion completed successfully!", "SUCCESS")
+    
+    print_status("✓ All data ingestion completed successfully!", "SUCCESS")
+    print_status(f"You can now search clinical patient data at: {ELASTIC_URL}/{INDEX_NAME}/_search", "INFO")
+    print_status(f"You can now search drug interactions data at: {ELASTIC_URL}/{DRUG_INTERACTIONS_INDEX_NAME}/_search", "INFO")
 
 if __name__ == "__main__":
     main()
@@ -292,8 +428,10 @@ EOF
 
 # Check if Python script executed successfully
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✓ Clinical patient data successfully ingested into Elasticsearch!${NC}"
+    echo -e "${GREEN}✓ Clinical patient data and drug interactions data successfully ingested into Elasticsearch!${NC}"
     echo -e "${YELLOW}You can now query your data using the Elasticsearch API or Kibana.${NC}"
+    echo -e "${YELLOW}Clinical patient data index: clinical-patient-data${NC}"
+    echo -e "${YELLOW}Drug interactions index: drug_interactions${NC}"
 else
     echo -e "${RED}✗ Data ingestion failed. Please check the error messages above.${NC}"
     exit 1

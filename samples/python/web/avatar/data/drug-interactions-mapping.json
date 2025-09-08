@@ -1,0 +1,12 @@
+{
+    "mappings": {
+      "properties": {
+        "primary_drug": {
+          "type": "keyword"
+        },
+        "negative_drug_interactions": {
+          "type": "keyword"
+        }
+      }
+    }
+  }
