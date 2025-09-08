@@ -21,6 +21,7 @@ from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO, join_room
 from azure.identity import DefaultAzureCredential
 from openai import AzureOpenAI
+from elasticsearch import Elasticsearch
 from vad_iterator import VADIterator, int2float
 
 # Create the Flask app
@@ -49,6 +50,10 @@ ice_server_url = os.environ.get('ICE_SERVER_URL')  # The ICE URL, e.g. turn:x.x.
 ice_server_url_remote = os.environ.get('ICE_SERVER_URL_REMOTE')  # The ICE URL for remote side, e.g. turn:x.x.x.x:3478. This is only required when the ICE address for remote side is different from local side.  # noqa: E501
 ice_server_username = os.environ.get('ICE_SERVER_USERNAME')  # The ICE username
 ice_server_password = os.environ.get('ICE_SERVER_PASSWORD')  # The ICE password
+# Elasticsearch configuration (required for patient data queries)
+elastic_url = os.environ.get('ELASTIC_URL')  # e.g. https://demo-c4ecc8.es.us-east-1.aws.elastic.cloud:443
+elastic_api_key = os.environ.get('ELASTIC_API_KEY')  # Elasticsearch API key
+elastic_index_name = os.environ.get('ELASTIC_INDEX_NAME')  # e.g. clinical-patient-data
 
 # Const variables
 enable_websockets = True  # Enable websockets between client and server for real-time communication optimization
@@ -70,6 +75,25 @@ if azure_openai_endpoint and azure_openai_api_key:
         azure_endpoint=azure_openai_endpoint,
         api_version='2024-06-01',
         api_key=azure_openai_api_key)
+
+# Initialize Elasticsearch client
+elastic_client = None
+if elastic_url and elastic_api_key:
+    try:
+        elastic_client = Elasticsearch(
+            hosts=[elastic_url],
+            api_key=elastic_api_key,
+            verify_certs=True
+        )
+        # Test the connection
+        if elastic_client.ping():
+            print("Elasticsearch connection successful!")
+        else:
+            print("Elasticsearch connection failed!")
+            elastic_client = None
+    except Exception as e:
+        print(f"Failed to initialize Elasticsearch client: {e}")
+        elastic_client = None
 
 # VAD
 vad_iterator = None
@@ -304,7 +328,7 @@ def connectAvatar() -> Response:
         client_context['chat_initiated'] = True
         
         # Send initial greeting asking for patient name
-        initial_greeting = "Hello! I'm your clinical assistant. To get started, could you please provide me with the patient's name?"
+        initial_greeting = "Hello! I'm your clinical assistant. Please provide the patient's name."
         if enable_websockets:
             socketio.emit("response", {'path': 'api.chat', 'chatResponse': 'Assistant: ' + initial_greeting}, room=client_id)
             # Also speak the greeting
@@ -510,6 +534,12 @@ def clearChatHistory() -> Response:
     client_context = client_contexts[client_id]
     initializeChatContext(request.headers.get('SystemPrompt'), client_id)
     client_context['chat_initiated'] = True
+    
+    # Send a fresh initial greeting after clearing history
+    initial_greeting = "Hello! I'm your clinical assistant. Please provide the patient's name."
+    client_context['initial_greeting'] = initial_greeting
+    client_context['initial_greeting_sent'] = False
+    
     return Response('Chat history cleared.', status=200)
 
 
@@ -623,7 +653,9 @@ def initializeClient() -> uuid.UUID:
         'speaking_thread': None,  # The thread to speak the spoken text queue
         'last_speak_time': None,  # The last time the avatar spoke
         'initial_greeting_sent': False,  # Flag to indicate if initial greeting has been sent
-        'initial_greeting': None  # The initial greeting message
+        'initial_greeting': None,  # The initial greeting message
+        'patient_name': None,  # The current patient name
+        'patient_data': None  # The patient data from Elasticsearch
     }
     return client_id
 
@@ -678,12 +710,96 @@ def refreshSpeechToken() -> None:
         time.sleep(60 * 9)
 
 
+# Query patient data from Elasticsearch
+def queryPatientData(patient_name: str) -> dict:
+    """
+    Query patient records from Elasticsearch based on patient name.
+    Returns a dictionary containing patient data or error information.
+    """
+    print(f"Querying patient data for: '{patient_name}'")
+    print(f"Elasticsearch client configured: {elastic_client is not None}")
+    print(f"Elasticsearch index: {elastic_index_name}")
+    
+    if not elastic_client or not elastic_index_name:
+        return {"error": "Elasticsearch client not configured"}
+    
+    try:
+        # Use a simpler query structure that's more compatible with standard Elasticsearch
+        query = {
+            "query": {
+                "match": {
+                    "patient_name": patient_name
+                }
+            },
+            "_source": [
+                "date_of_visit",
+                "patient_complaint", 
+                "diagnosis",
+                "doctor_notes",
+                "drugs_prescribed",
+                "patient_age_at_visit",
+                "patient_name"
+            ]
+        }
+        
+        print(f"Executing Elasticsearch query: {json.dumps(query, indent=2)}")
+        
+        # Execute the search
+        response = elastic_client.search(
+            index=elastic_index_name,
+            body=query
+        )
+        
+        # Convert response to dictionary if it's an ObjectApiResponse
+        if hasattr(response, 'body'):
+            response_dict = response.body
+        else:
+            response_dict = response
+        
+        print(f"Elasticsearch response: {json.dumps(response_dict, indent=2)}")
+        
+        # Extract and format the results
+        hits = response_dict.get('hits', {}).get('hits', [])
+        patient_records = []
+        
+        for hit in hits:
+            source = hit.get('_source', {})
+            patient_records.append({
+                'date_of_visit': source.get('date_of_visit'),
+                'patient_complaint': source.get('patient_complaint'),
+                'diagnosis': source.get('diagnosis'),
+                'doctor_notes': source.get('doctor_notes'),
+                'drugs_prescribed': source.get('drugs_prescribed'),
+                'patient_age_at_visit': source.get('patient_age_at_visit'),
+                'patient_name': source.get('patient_name')
+            })
+        
+        return {
+            "success": True,
+            "patient_name": patient_name,
+            "total_records": len(patient_records),
+            "records": patient_records
+        }
+        
+    except Exception as e:
+        print(f"Error querying patient data: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Failed to query patient data: {str(e)}"}
+
+
 # Initialize the chat context, e.g. chat history (messages), data sources, etc. For chat scenario.
 def initializeChatContext(system_prompt: str, client_id: uuid.UUID) -> None:
     client_context = client_contexts[client_id]
     cognitive_search_index_name = client_context['cognitive_search_index_name']
     messages = client_context['messages']
     data_sources = client_context['data_sources']
+
+    # Clear patient-specific data to start fresh
+    client_context['patient_name'] = None
+    client_context['patient_data'] = None
+    client_context['initial_greeting_sent'] = False
+    client_context['initial_greeting'] = None
 
     # Initialize data sources for 'on your data' scenario
     data_sources.clear()
@@ -730,6 +846,108 @@ def handleUserQuery(user_query: str, client_id: uuid.UUID):
     azure_openai_deployment_name = client_context['azure_openai_deployment_name']
     messages = client_context['messages']
     data_sources = client_context['data_sources']
+    patient_name = client_context.get('patient_name')
+    patient_data = client_context.get('patient_data')
+
+    # Check if this is the first interaction and user provided a patient name
+    # This should trigger immediately when the avatar asks for a patient name
+    if not patient_name and not patient_data:
+        # More aggressive patient name detection - treat any reasonable input as a potential name
+        query_words = user_query.strip().split()
+        
+        # If we don't have a patient name yet, treat the first user input as a potential patient name
+        if len(query_words) >= 1 and len(query_words) <= 5:  # Allow up to 5 words for names
+            potential_name = ' '.join(query_words)
+            
+            # Check if it looks like a name or is a reasonable input
+            is_likely_name = (
+                any(word[0].isupper() for word in query_words if word) or  # Has capital letters
+                potential_name.lower() in ['jane doe', 'john doe', 'jane smith', 'john smith', 'mary jane', 'bob smith'] or  # Common names
+                len(query_words) == 2 or  # Most names are 2 words
+                len(query_words) == 1  # Single names are also possible
+            )
+            
+            if is_likely_name:
+                print(f"🔍 Detected potential patient name: '{potential_name}'")
+                print(f"🔍 Querying Elasticsearch immediately...")
+                
+                # Query patient data from Elasticsearch immediately
+                patient_data_result = queryPatientData(potential_name)
+                print(f"🔍 Elasticsearch query result: {patient_data_result}")
+                
+                if patient_data_result.get('success'):
+                    client_context['patient_name'] = potential_name
+                    client_context['patient_data'] = patient_data_result
+                    patient_name = potential_name
+                    patient_data = patient_data_result
+                    
+                    # Add patient data summary to the conversation
+                    if patient_data_result['total_records'] > 0:
+                        summary_message = f"✅ Found {patient_data_result['total_records']} records for {potential_name}. What would you like to know?"
+                    else:
+                        summary_message = f"✅ Found {patient_data_result['total_records']} records for {potential_name}. Please try a different name or provide more details."
+                    
+                    # Add the summary as a system message to provide context
+                    system_context = {
+                        'role': 'system',
+                        'content': f"Patient: {potential_name}\nMedical Records Summary: {json.dumps(patient_data_result, indent=2)}\n\nYou are a clinical assistant helping with patient {potential_name}. Use the medical records data to answer questions about their health history, diagnoses, treatments, and provide clinical insights."
+                    }
+                    messages.append(system_context)
+                    
+                    # Yield the summary response
+                    yield summary_message
+                    # Also speak the summary response
+                    speakWithQueue(summary_message, 0, client_id)
+                    return
+                else:
+                    # No patient found, ask for clarification
+                    error_msg = patient_data_result.get('error', 'Unknown error')
+                    error_response = f"❌ No records found for '{potential_name}'. Please check spelling or try a different name."
+                    yield error_response
+                    # Also speak the error response
+                    speakWithQueue(error_response, 0, client_id)
+                    return
+            else:
+                # Input doesn't look like a name, but still try to query it
+                print(f"🔍 Input doesn't look like a typical name, but trying to query anyway: '{potential_name}'")
+                patient_data_result = queryPatientData(potential_name)
+                
+                if patient_data_result.get('success') and patient_data_result['total_records'] > 0:
+                    # Found data even though it didn't look like a name
+                    client_context['patient_name'] = potential_name
+                    client_context['patient_data'] = patient_data_result
+                    success_response = f"✅ Found {patient_data_result['total_records']} records for '{potential_name}'. What would you like to know?"
+                    yield success_response
+                    # Also speak the success response
+                    speakWithQueue(success_response, 0, client_id)
+                    return
+                else:
+                    # No data found, ask for a proper patient name
+                    no_data_response = f"❌ No records found for '{potential_name}'. Please provide a patient name (e.g., 'Jane Doe')."
+                    yield no_data_response
+                    # Also speak the no data response
+                    speakWithQueue(no_data_response, 0, client_id)
+                    return
+        else:
+            # Input is too long or too short, but still try to query it as a patient name
+            potential_name = user_query.strip()
+            print(f"🔍 Input length unusual, but trying to query anyway: '{potential_name}'")
+            patient_data_result = queryPatientData(potential_name)
+            
+            if patient_data_result.get('success') and patient_data_result['total_records'] > 0:
+                client_context['patient_name'] = potential_name
+                client_context['patient_data'] = patient_data_result
+                final_success_response = f"✅ Found {patient_data_result['total_records']} records for '{potential_name}'. What would you like to know?"
+                yield final_success_response
+                # Also speak the final success response
+                speakWithQueue(final_success_response, 0, client_id)
+                return
+            else:
+                final_no_data_response = f"❌ No records found for '{potential_name}'. Please provide a patient name (e.g., 'Jane Doe')."
+                yield final_no_data_response
+                # Also speak the final no data response
+                speakWithQueue(final_no_data_response, 0, client_id)
+                return
 
     chat_message = {
         'role': 'user',

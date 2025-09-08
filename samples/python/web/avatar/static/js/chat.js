@@ -668,22 +668,49 @@ window.stopSession = () => {
 }
 
 window.clearChatHistory = () => {
+    console.log('Clear chat history button clicked')
     lastInteractionTime = new Date()
+    
+    // Check if clientId is available
+    if (!clientId) {
+        console.error('ClientId not available yet. Please wait for page to load completely.')
+        alert('Please wait for the page to load completely before clearing chat history.')
+        return
+    }
+    
+    // Clear the UI immediately for better user experience
+    document.getElementById('chatHistory').innerHTML = ''
+    document.getElementById('latencyLog').innerHTML = ''
+    
     fetch('/api/chat/clearHistory', {
         method: 'POST',
         headers: {
             'ClientId': clientId,
-            'SystemPrompt': document.getElementById('prompt').value
+            'SystemPrompt': document.getElementById('prompt').value || ''
         },
         body: ''
     })
     .then(response => {
+        console.log('Clear chat history response:', response.status, response.statusText)
         if (response.ok) {
-            document.getElementById('chatHistory').innerHTML = ''
-            document.getElementById('latencyLog').innerHTML = ''
+            console.log('Chat history cleared successfully')
+            // Show a brief confirmation message
+            const chatHistoryElement = document.getElementById('chatHistory')
+            chatHistoryElement.innerHTML = '<em style="color: #666;">Chat history cleared. Ready for a new conversation.</em>'
+            // Clear the confirmation message after 2 seconds
+            setTimeout(() => {
+                if (chatHistoryElement.innerHTML.includes('Chat history cleared')) {
+                    chatHistoryElement.innerHTML = ''
+                }
+            }, 2000)
         } else {
             throw new Error(`Failed to clear chat history: ${response.status} ${response.statusText}`)
         }
+    })
+    .catch(error => {
+        console.error('Error clearing chat history:', error)
+        // Restore the chat history if there was an error
+        alert('Failed to clear chat history. Please try again.')
     })
 }
 

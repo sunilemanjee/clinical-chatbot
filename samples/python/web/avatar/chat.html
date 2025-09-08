@@ -86,10 +86,12 @@
         overflow: hidden;" hidden></textarea>
   </div>
   <div id="localVideo" hidden>
-    <video autoplay loop muted>
+    <video autoplay loop muted onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
       <source src="{{ url_for('static', filename='video/lisa-casual-sitting-idle.mp4') }}" type="video/mp4">
       <!-- Fallback if video is not available -->
-      <p>Video not available</p>
+      <div style="display:none; width: 960px; height: 540px; background-color: #f0f0f0; align-items: center; justify-content: center; color: #666;">
+        <p>Avatar video not available</p>
+      </div>
     </video>
   </div>
   <div id="remoteVideo"></div>

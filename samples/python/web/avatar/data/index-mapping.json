@@ -1,0 +1,41 @@
+{
+    "mappings": {
+      "properties": {
+        "date_of_visit": {
+          "type": "date",
+          "format": "yyyy-MM-dd"
+        },
+        "diagnosis": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "doctor_notes": {
+          "type": "text"
+        },
+        "drugs_prescribed": {
+          "type": "keyword"
+        },
+        "ingestion_timestamp": {
+          "type": "date"
+        },
+        "patient_age_at_visit": {
+          "type": "integer"
+        },
+        "patient_complaint": {
+          "type": "text"
+        },
+        "patient_name": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  }
