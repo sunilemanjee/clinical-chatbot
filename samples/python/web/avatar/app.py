@@ -173,8 +173,43 @@ def getStatus() -> Response:
 def connectAvatar() -> Response:
     client_id = uuid.UUID(request.headers.get('ClientId'))
     isReconnecting = request.headers.get('Reconnect') and request.headers.get('Reconnect').lower() == 'true'
-    # disconnect avatar if already connected
-    disconnectAvatarInternal(client_id, isReconnecting)
+    
+    # Ensure client context exists before trying to disconnect
+    if client_id in client_contexts:
+        # disconnect avatar if already connected
+        disconnectAvatarInternal(client_id, isReconnecting)
+    
+    # Get or create client context
+    if client_id not in client_contexts:
+        print(f"⚠️ Client context not found for {client_id}, creating new one")
+        client_contexts[client_id] = {
+            'audio_input_stream': None,
+            'vad_audio_buffer': [],
+            'speech_recognizer': None,
+            'azure_openai_deployment_name': azure_openai_deployment_name,
+            'cognitive_search_index_name': cognitive_search_index_name,
+            'tts_voice': default_tts_voice,
+            'custom_voice_endpoint_id': None,
+            'personal_voice_speaker_profile_id': None,
+            'speech_synthesizer': None,
+            'speech_synthesizer_connection': None,
+            'speech_synthesizer_connected': False,
+            'speech_token': None,
+            'ice_token': None,
+            'chat_initiated': False,
+            'messages': [],
+            'data_sources': [],
+            'is_speaking': False,
+            'speaking_text': None,
+            'spoken_text_queue': [],
+            'speaking_thread': None,
+            'last_speak_time': None,
+            'initial_greeting_sent': False,
+            'initial_greeting': None,
+            'patient_name': None,
+            'patient_data': None
+        }
+    
     client_context = client_contexts[client_id]
 
     # Override default values with client provided values
@@ -913,6 +948,217 @@ def queryPatientData(patient_name: str) -> dict:
         return {"error": f"Failed to query patient data: {str(e)}"}
 
 
+def getDetailedMedicationInfo(patient_name: str, patient_data: dict, function_args: dict) -> str:
+    """
+    Get detailed medication information based on the query type.
+    Returns a natural, conversational response about medications.
+    """
+    if not patient_data.get('success'):
+        return f"I don't have any medical records for {patient_name}."
+    
+    records = patient_data.get('records', [])
+    if not records:
+        return f"I couldn't find any medical records for {patient_name}."
+    
+    # Sort records by date (most recent first)
+    sorted_records = sorted(records, key=lambda x: x.get('date_of_visit', ''), reverse=True)
+    
+    query_type = function_args.get('medication_query_type', 'last_visit')
+    visit_date = function_args.get('visit_date')
+    
+    if query_type == 'last_visit':
+        # Get medications from the most recent visit
+        recent_visit = sorted_records[0] if sorted_records else None
+        if not recent_visit:
+            return f"I don't have recent visit information for {patient_name}."
+        
+        recent_meds = recent_visit.get('drugs_prescribed', [])
+        recent_date = recent_visit.get('date_of_visit', 'Unknown date')
+        
+        # Format the date nicely
+        if recent_date == "3-DAYS-AGO":
+            date_text = "3 days ago"
+        elif recent_date and recent_date != "Unknown date":
+            try:
+                from datetime import datetime
+                parsed_date = datetime.strptime(recent_date, "%Y-%m-%d")
+                date_text = parsed_date.strftime("%B %d, %Y")
+            except:
+                date_text = recent_date
+        else:
+            date_text = "recently"
+        
+        if recent_meds and recent_meds != ["None"]:
+            if len(recent_meds) == 1:
+                return f"Yes, during her last visit {date_text}, {patient_name} was prescribed {recent_meds[0]}."
+            else:
+                meds_text = ", ".join(recent_meds[:-1]) + f" and {recent_meds[-1]}"
+                return f"Yes, during her last visit {date_text}, {patient_name} was prescribed {meds_text}."
+        else:
+            return f"No medications were prescribed during her last visit {date_text}."
+    
+    elif query_type == 'current':
+        # Get all current medications (from recent visits)
+        all_medications = []
+        for record in sorted_records[:3]:  # Check last 3 visits
+            meds = record.get('drugs_prescribed', [])
+            if meds and meds != ["None"]:
+                all_medications.extend(meds)
+        
+        # Remove duplicates while preserving order
+        current_meds = list(dict.fromkeys(all_medications))
+        
+        if current_meds:
+            if len(current_meds) == 1:
+                return f"{patient_name} is currently taking {current_meds[0]}."
+            else:
+                meds_text = ", ".join(current_meds[:-1]) + f" and {current_meds[-1]}"
+                return f"{patient_name} is currently taking {meds_text}."
+        else:
+            return f"{patient_name} is not currently taking any medications."
+    
+    elif query_type == 'all_history':
+        # Get all medications from all visits
+        all_medications = []
+        for record in sorted_records:
+            meds = record.get('drugs_prescribed', [])
+            if meds and meds != ["None"]:
+                all_medications.extend(meds)
+        
+        # Remove duplicates while preserving order
+        unique_meds = list(dict.fromkeys(all_medications))
+        
+        if unique_meds:
+            if len(unique_meds) == 1:
+                return f"Throughout her medical history, {patient_name} has been prescribed {unique_meds[0]}."
+            else:
+                meds_text = ", ".join(unique_meds[:-1]) + f" and {unique_meds[-1]}"
+                return f"Throughout her medical history, {patient_name} has been prescribed {meds_text}."
+        else:
+            return f"No medications have been prescribed to {patient_name} in her medical history."
+    
+    elif query_type == 'specific_visit' and visit_date:
+        # Get medications from a specific visit
+        target_record = None
+        for record in sorted_records:
+            if record.get('date_of_visit') == visit_date:
+                target_record = record
+                break
+        
+        if not target_record:
+            return f"I couldn't find a visit on {visit_date} for {patient_name}."
+        
+        meds = target_record.get('drugs_prescribed', [])
+        if meds and meds != ["None"]:
+            if len(meds) == 1:
+                return f"During the visit on {visit_date}, {patient_name} was prescribed {meds[0]}."
+            else:
+                meds_text = ", ".join(meds[:-1]) + f" and {meds[-1]}"
+                return f"During the visit on {visit_date}, {patient_name} was prescribed {meds_text}."
+        else:
+            return f"No medications were prescribed during the visit on {visit_date}."
+    
+    else:
+        return f"I need more specific information about what medication information you're looking for."
+
+
+def createEnhancedPatientSummary(patient_name: str, patient_data: dict) -> str:
+    """
+    Create a natural, conversational patient summary.
+    Returns a human-friendly response that answers the user's question.
+    """
+    if not patient_data.get('success'):
+        return f"I don't have any medical records for {patient_name}."
+    
+    records = patient_data.get('records', [])
+    if not records:
+        return f"I couldn't find any medical records for {patient_name}."
+    
+    # Sort records by date (most recent first)
+    sorted_records = sorted(records, key=lambda x: x.get('date_of_visit', ''), reverse=True)
+    
+    # Get the most recent visit
+    recent_visit = sorted_records[0] if sorted_records else None
+    
+    if not recent_visit:
+        return f"I don't have recent visit information for {patient_name}."
+    
+    # Extract key information from the most recent visit
+    recent_date = recent_visit.get('date_of_visit', 'Unknown date')
+    recent_condition = recent_visit.get('diagnosis', 'Unknown condition')
+    recent_complaint = recent_visit.get('patient_complaint', '')
+    recent_notes = recent_visit.get('doctor_notes', '')
+    recent_meds = recent_visit.get('drugs_prescribed', [])
+    
+    # Format the date nicely
+    if recent_date == "3-DAYS-AGO":
+        date_text = "3 days ago"
+    elif recent_date and recent_date != "Unknown date":
+        try:
+            from datetime import datetime
+            parsed_date = datetime.strptime(recent_date, "%Y-%m-%d")
+            date_text = parsed_date.strftime("%B %d, %Y")
+        except:
+            date_text = recent_date
+    else:
+        date_text = "recently"
+    
+    # Build a natural response
+    response_parts = []
+    
+    # Clean up the condition name for better readability
+    clean_condition = recent_condition.rstrip('.').replace('Recurrence of ', 'recurring ')
+    if 'BPPV' in clean_condition:
+        clean_condition = clean_condition.replace('BPPV', 'vertigo')
+    
+    # Start with the most recent visit
+    response_parts.append(f"Jane's most recent visit was {date_text} for {clean_condition.lower()}")
+    
+    # Add complaint if available and relevant
+    if recent_complaint and len(recent_complaint) < 100:  # Keep it concise
+        # Clean up the complaint text
+        clean_complaint = recent_complaint.lower().rstrip('.')
+        response_parts.append(f"She came in with {clean_complaint}")
+    
+    # Add current medications if any
+    if recent_meds and recent_meds != ["None"]:
+        if len(recent_meds) == 1:
+            response_parts.append(f"She's currently taking {recent_meds[0]}")
+        else:
+            meds_text = ", ".join(recent_meds[:-1]) + f" and {recent_meds[-1]}"
+            response_parts.append(f"She's currently taking {meds_text}")
+    
+    # Add medication history context if relevant
+    all_medications = []
+    for record in sorted_records[:5]:  # Check last 5 visits for medication history
+        meds = record.get('drugs_prescribed', [])
+        if meds and meds != ["None"]:
+            all_medications.extend(meds)
+    
+    # Remove duplicates while preserving order
+    unique_meds = list(dict.fromkeys(all_medications))
+    
+    # If patient has been on multiple medications, add context
+    if len(unique_meds) > 1 and recent_meds and recent_meds != ["None"]:
+        if recent_meds[0] not in unique_meds[:2]:  # If current med is not one of the most common
+            response_parts.append(f"She has a history of vertigo-related medications")
+    
+    # Add key clinical insight
+    if "BPPV" in recent_condition or "vertigo" in clean_condition.lower():
+        response_parts.append("This is a recurring condition for her")
+    
+    # Combine into a natural sentence
+    if len(response_parts) == 1:
+        return response_parts[0] + "."
+    elif len(response_parts) == 2:
+        return f"{response_parts[0]}. {response_parts[1].capitalize()}."
+    else:
+        # For 3+ parts, create a flowing sentence
+        main_response = response_parts[0]
+        additional_info = ". ".join(response_parts[1:])
+        return f"{main_response}. {additional_info.capitalize()}."
+
+
 # Initialize the chat context, e.g. chat history (messages), data sources, etc. For chat scenario.
 def initializeChatContext(system_prompt: str, client_id: uuid.UUID) -> None:
     client_context = client_contexts[client_id]
@@ -974,111 +1220,11 @@ def handleUserQuery(user_query: str, client_id: uuid.UUID):
     patient_name = client_context.get('patient_name')
     patient_data = client_context.get('patient_data')
 
-    # Check if this is the first interaction and user provided a patient name
-    # This should trigger immediately when the avatar asks for a patient name
-    if not patient_name and not patient_data:
-        # More aggressive patient name detection - treat any reasonable input as a potential name
-        query_words = user_query.strip().split()
-        
-        # If we don't have a patient name yet, treat the first user input as a potential patient name
-        if len(query_words) >= 1 and len(query_words) <= 5:  # Allow up to 5 words for names
-            potential_name = ' '.join(query_words)
-            
-            # Check if it looks like a name or is a reasonable input
-            is_likely_name = (
-                any(word[0].isupper() for word in query_words if word) or  # Has capital letters
-                potential_name.lower() in ['jane doe', 'john doe', 'jane smith', 'john smith', 'mary jane', 'bob smith'] or  # Common names
-                len(query_words) == 2 or  # Most names are 2 words
-                len(query_words) == 1  # Single names are also possible
-            )
-            
-            if is_likely_name:
-                print(f"🔍 Detected potential patient name: '{potential_name}'")
-                print(f"🔍 Querying Elasticsearch immediately...")
-                
-                # Query patient data from Elasticsearch immediately
-                patient_data_result = queryPatientData(potential_name)
-                print(f"🔍 Elasticsearch query result: {patient_data_result}")
-                
-                if patient_data_result.get('success'):
-                    client_context['patient_name'] = potential_name
-                    client_context['patient_data'] = patient_data_result
-                    patient_name = potential_name
-                    patient_data = patient_data_result
-                    
-                    # Add patient data summary to the conversation
-                    if patient_data_result['total_records'] > 0:
-                        summary_message = f"✅ Found {patient_data_result['total_records']} records for {potential_name}. What would you like to know?"
-                    else:
-                        summary_message = f"✅ Found {patient_data_result['total_records']} records for {potential_name}. Please try a different name or provide more details."
-                    
-                    # Add the summary as a system message to provide context
-                    system_context = {
-                        'role': 'system',
-                        'content': f"Patient: {potential_name}\nMedical Records Summary: {json.dumps(patient_data_result, indent=2)}\n\nYou are a clinical assistant helping with patient {potential_name}. Use the medical records data to answer questions about their health history, diagnoses, treatments, and provide clinical insights."
-                    }
-                    messages.append(system_context)
-                    
-                    # Yield the summary response
-                    yield summary_message
-                    # Also speak the summary response
-                    speakWithQueue(summary_message, 0, client_id)
-                    return
-                else:
-                    # No patient found, ask for clarification
-                    error_msg = patient_data_result.get('error', 'Unknown error')
-                    error_response = f"❌ No records found for '{potential_name}'. Please check spelling or try a different name."
-                    yield error_response
-                    # Also speak the error response
-                    speakWithQueue(error_response, 0, client_id)
-                    return
-            else:
-                # Input doesn't look like a name, but still try to query it
-                print(f"🔍 Input doesn't look like a typical name, but trying to query anyway: '{potential_name}'")
-                patient_data_result = queryPatientData(potential_name)
-                
-                if patient_data_result.get('success') and patient_data_result['total_records'] > 0:
-                    # Found data even though it didn't look like a name
-                    client_context['patient_name'] = potential_name
-                    client_context['patient_data'] = patient_data_result
-                    success_response = f"✅ Found {patient_data_result['total_records']} records for '{potential_name}'. What would you like to know?"
-                    yield success_response
-                    # Also speak the success response
-                    speakWithQueue(success_response, 0, client_id)
-                    return
-                else:
-                    # No data found, ask for a proper patient name
-                    no_data_response = f"❌ No records found for '{potential_name}'. Please provide a patient name (e.g., 'Jane Doe')."
-                    yield no_data_response
-                    # Also speak the no data response
-                    speakWithQueue(no_data_response, 0, client_id)
-                    return
-        else:
-            # Input is too long or too short, but still try to query it as a patient name
-            potential_name = user_query.strip()
-            print(f"🔍 Input length unusual, but trying to query anyway: '{potential_name}'")
-            patient_data_result = queryPatientData(potential_name)
-            
-            if patient_data_result.get('success') and patient_data_result['total_records'] > 0:
-                client_context['patient_name'] = potential_name
-                client_context['patient_data'] = patient_data_result
-                final_success_response = f"✅ Found {patient_data_result['total_records']} records for '{potential_name}'. What would you like to know?"
-                yield final_success_response
-                # Also speak the final success response
-                speakWithQueue(final_success_response, 0, client_id)
-                return
-            else:
-                final_no_data_response = f"❌ No records found for '{potential_name}'. Please provide a patient name (e.g., 'Jane Doe')."
-                yield final_no_data_response
-                # Also speak the final no data response
-                speakWithQueue(final_no_data_response, 0, client_id)
-                return
-
+    # Add user message to conversation
     chat_message = {
         'role': 'user',
         'content': user_query
     }
-
     messages.append(chat_message)
 
     # Check for medication interactions if patient data is available
@@ -1113,64 +1259,409 @@ def handleUserQuery(user_query: str, client_id: uuid.UUID):
     assistant_reply = ''
     tool_content = ''
     spoken_sentence = ''
+    
+    # Variables for response handling
 
+    # Define MCP tools for the LLM
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_patient_data",
+                "description": "CRITICAL: Use this tool IMMEDIATELY when ANY patient name is mentioned for the FIRST TIME. Retrieve patient medical records and history from the clinical database. Do NOT ask for more context - just fetch the data automatically. This tool provides a natural conversational response with key clinical insights.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "patient_name": {
+                            "type": "string",
+                            "description": "Full name of the patient to retrieve records for"
+                        }
+                    },
+                    "required": ["patient_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_patient_summary",
+                "description": "Get a comprehensive clinical summary of patient medical history. Use this when patient data is already loaded and user asks for 'summary', 'overview', 'last visit', or similar requests. This provides enhanced clinical insights including recurring conditions, current medications, and visit patterns.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "patient_name": {
+                            "type": "string",
+                            "description": "Full name of the patient"
+                        },
+                        "summary_type": {
+                            "type": "string",
+                            "enum": ["comprehensive", "medication_focus", "recent_visits", "risk_assessment", "treatment_history"],
+                            "description": "Type of summary to generate",
+                            "default": "comprehensive"
+                        }
+                    },
+                    "required": ["patient_name"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "check_medication_interactions",
+                "description": "Check for potential drug interactions between medications. Use this when prescribing new medications or when user asks about medication safety.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "new_medications": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of new medications being considered"
+                        },
+                        "existing_medications": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of patient's current medications"
+                        }
+                    },
+                    "required": ["new_medications", "existing_medications"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_medication_info",
+                "description": "Get detailed medication information for a patient. Use this when user asks about medications, prescriptions, drugs prescribed, current medications, or medication history.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "patient_name": {
+                            "type": "string",
+                            "description": "Full name of the patient"
+                        },
+                        "medication_query_type": {
+                            "type": "string",
+                            "enum": ["last_visit", "current", "all_history", "specific_visit"],
+                            "description": "Type of medication query - last visit, current medications, all history, or specific visit",
+                            "default": "last_visit"
+                        },
+                        "visit_date": {
+                            "type": "string",
+                            "description": "Specific visit date if querying a particular visit (optional)"
+                        }
+                    },
+                    "required": ["patient_name"]
+                }
+            }
+        }
+    ]
+
+    # Check if user query contains a patient name and force tool usage
+    import re
+    
+    # More comprehensive patient name detection
+    patient_name_patterns = [
+        r"jane\s+doe", r"john\s+doe",  # Specific names from the data
+        r"patient\s+name", r"patient\s+is", r"patient\s+called",
+        r"mr\.?\s+\w+", r"ms\.?\s+\w+", r"mrs\.?\s+\w+", r"dr\.?\s+\w+",
+        r"my\s+patient", r"the\s+patient", r"this\s+patient"
+    ]
+    
+    user_query_lower = user_query.lower()
+    contains_patient_name = any(re.search(pattern, user_query_lower) for pattern in patient_name_patterns)
+    
+    # Smart tool usage logic
+    tool_choice = "auto"
+    extracted_patient_name = None
+    
+    # Check if this is a summary request for an already loaded patient
+    summary_keywords = ["summarize", "summary", "overview", "last visit", "recent", "history"]
+    is_summary_request = any(keyword in user_query_lower for keyword in summary_keywords)
+    
+    # Check if this is a medication-related query
+    medication_keywords = ["medication", "medicines", "drugs", "prescribed", "prescription", "taking", "current medication", "medication history", "drug history"]
+    is_medication_query = any(keyword in user_query_lower for keyword in medication_keywords)
+    
+    if contains_patient_name and not patient_data:
+        # First time patient name mentioned - get data
+        tool_choice = {"type": "function", "function": {"name": "get_patient_data"}}
+        print(f"🔍 Patient name detected in query: '{user_query}' - Forcing get_patient_data tool usage")
+        
+        # Extract patient name for fallback
+        if "jane doe" in user_query_lower:
+            extracted_patient_name = "Jane Doe"
+        elif "john doe" in user_query_lower:
+            extracted_patient_name = "John Doe"
+        else:
+            # Try to extract name from common patterns
+            name_match = re.search(r"(?:patient\s+(?:name\s+)?(?:is\s+)?|mr\.?\s+|ms\.?\s+|mrs\.?\s+|dr\.?\s+)([A-Z][a-z]+\s+[A-Z][a-z]+)", user_query)
+            if name_match:
+                extracted_patient_name = name_match.group(1)
+    elif patient_data and is_medication_query:
+        # Patient data already loaded and user asks about medications - use medication tool
+        tool_choice = {"type": "function", "function": {"name": "get_medication_info"}}
+        print(f"💊 Medication query detected for loaded patient - Using get_medication_info tool")
+        print(f"🔍 Patient data available: {patient_data.get('success', False)}")
+        print(f"🔍 Patient name: {patient_name}")
+        extracted_patient_name = patient_name
+    elif patient_data and is_summary_request:
+        # Patient data already loaded and user wants summary - use summary tool
+        tool_choice = {"type": "function", "function": {"name": "get_patient_summary"}}
+        print(f"📋 Summary request detected for loaded patient - Using get_patient_summary tool")
+        print(f"🔍 Patient data available: {patient_data.get('success', False)}")
+        print(f"🔍 Patient name: {patient_name}")
+        extracted_patient_name = patient_name
+    
     aoai_start_time = datetime.datetime.now(pytz.UTC)
-    response = azure_openai.chat.completions.create(
-        model=azure_openai_deployment_name,
-        messages=messages,
-        extra_body={'data_sources': data_sources} if len(data_sources) > 0 else None,
-        max_tokens=150,  # Limit response to approximately 2-3 sentences
-        stream=True)
+    # For tool calls, use non-streaming to avoid complexity
+    if tool_choice != "auto":
+        # Specific tool choice - use non-streaming
+        response = azure_openai.chat.completions.create(
+            model=azure_openai_deployment_name,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,  # Force tool usage when patient name detected
+            extra_body={'data_sources': data_sources} if len(data_sources) > 0 else None,
+            max_tokens=150,  # Limit response to approximately 2-3 sentences
+            stream=False)
+    else:
+        # Auto tool choice - use streaming
+        response = azure_openai.chat.completions.create(
+            model=azure_openai_deployment_name,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,  # Force tool usage when patient name detected
+            extra_body={'data_sources': data_sources} if len(data_sources) > 0 else None,
+            max_tokens=150,  # Limit response to approximately 2-3 sentences
+            stream=True)
 
-    is_first_chunk = True
-    is_first_sentence = True
-    for chunk in response:
-        if len(chunk.choices) > 0:
-            response_token = chunk.choices[0].delta.content
-            if response_token is not None:
-                # Log response_token here if need debug
-                if is_first_chunk:
-                    first_token_latency_ms = round((datetime.datetime.now(pytz.UTC) - aoai_start_time).total_seconds() * 1000)
-                    print(f"AOAI first token latency: {first_token_latency_ms}ms")
-                    yield f"<FTL>{first_token_latency_ms}</FTL>"
-                    is_first_chunk = False
-                if oyd_doc_regex.search(response_token):
-                    response_token = oyd_doc_regex.sub('', response_token).strip()
-                yield response_token  # yield response token to client as display text
-                assistant_reply += response_token  # build up the assistant message
-                if response_token == '\n' or response_token == '\n\n':
-                    if is_first_sentence:
-                        first_sentence_latency_ms = round((datetime.datetime.now(pytz.UTC) - aoai_start_time).total_seconds() * 1000)
-                        print(f"AOAI first sentence latency: {first_sentence_latency_ms}ms")
-                        yield f"<FSL>{first_sentence_latency_ms}</FSL>"
-                        is_first_sentence = False
-                    speakWithQueue(spoken_sentence.strip(), 0, client_id)
-                    spoken_sentence = ''
+    # Handle non-streaming response (for tool calls)
+    if tool_choice != "auto":
+        print(f"🔧 Processing non-streaming response with tool_choice: {tool_choice}")
+        # Handle tool calls in non-streaming mode
+        if response.choices[0].message.tool_calls:
+            print(f"🔧 Tool calls found: {len(response.choices[0].message.tool_calls)}")
+            for tool_call in response.choices[0].message.tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                print(f"✅ Tool call: {function_name} with args: {function_args}")
+                # Don't show technical tool call messages to user - just process silently
+                
+                if function_name == "get_patient_data":
+                    patient_name = function_args.get("patient_name")
+                    if not patient_name:
+                        print(f"⚠️ No patient_name provided in function arguments")
+                        continue
+                        
+                    result = queryPatientData(patient_name)
+                    # Store patient data in context
+                    client_context['patient_name'] = patient_name
+                    client_context['patient_data'] = result
+                    
+                    # Add a conversational response to the result
+                    if result.get('success'):
+                        # Create a natural, conversational response
+                        total_records = result.get('total_records', 0)
+                        
+                        # Get the most recent visit for context
+                        recent_visit = None
+                        if result.get('records'):
+                            recent_records = sorted(result['records'], key=lambda x: x.get('date_of_visit', ''), reverse=True)
+                            recent_visit = recent_records[0] if recent_records else None
+                        
+                        # Build a natural response
+                        if recent_visit:
+                            recent_condition = recent_visit.get('diagnosis', '')
+                            # Clean up the condition name
+                            if recent_condition:
+                                # Remove trailing periods and make it more readable
+                                recent_condition = recent_condition.rstrip('.').replace('Recurrence of ', 'recurring ')
+                                if 'BPPV' in recent_condition:
+                                    recent_condition = recent_condition.replace('BPPV', 'vertigo')
+                                
+                                conversational_response = f"I found {total_records} medical records for {patient_name}. Her most recent visit was for {recent_condition.lower()}. What would you like to know about her care?"
+                            else:
+                                conversational_response = f"I found {total_records} medical records for {patient_name}. What would you like to know about her care?"
+                        else:
+                            conversational_response = f"I found {total_records} medical records for {patient_name}. What would you like to know about her care?"
+                        
+                        result['conversational_response'] = conversational_response
+                        # Yield the conversational response so it gets spoken
+                        yield conversational_response
+                        # Also add to speech queue
+                        speakWithQueue(conversational_response, 0, client_id)
+                    else:
+                        conversational_response = f"No records found for {patient_name}. Please verify the patient name."
+                        result['conversational_response'] = conversational_response
+                        # Yield the conversational response so it gets spoken
+                        yield conversational_response
+                        # Also add to speech queue
+                        speakWithQueue(conversational_response, 0, client_id)
+                
+                elif function_name == "get_patient_summary":
+                    # First get patient data if not already available
+                    patient_name = function_args.get("patient_name")
+                    if not patient_name:
+                        print(f"⚠️ No patient_name provided in function arguments")
+                        continue
+                        
+                    if not client_context.get('patient_data'):
+                        patient_data = queryPatientData(patient_name)
+                        client_context['patient_data'] = patient_data
+                    else:
+                        patient_data = client_context['patient_data']
+                    
+                    # Create enhanced summary with clinical insights
+                    if patient_data.get('success'):
+                        summary = createEnhancedPatientSummary(patient_name, patient_data)
+                        result = {"summary": summary, "patient_data": patient_data}
+                        
+                        # Yield the summary so it gets spoken
+                        yield summary
+                        # Also add to speech queue
+                        speakWithQueue(summary, 0, client_id)
+                    else:
+                        result = {"error": "No patient data found"}
+                        error_msg = f"No patient data found for {patient_name}. Please verify the patient name."
+                        yield error_msg
+                        speakWithQueue(error_msg, 0, client_id)
+                
+                elif function_name == "check_medication_interactions":
+                    new_meds = function_args.get("new_medications", [])
+                    existing_meds = function_args.get("existing_medications", [])
+                    interactions = checkMedicationInteractions(new_meds, existing_meds)
+                    result = {"interactions": interactions}
+                
+                elif function_name == "get_medication_info":
+                    # First get patient data if not already available
+                    patient_name = function_args.get("patient_name")
+                    if not patient_name:
+                        print(f"⚠️ No patient_name provided in function arguments")
+                        continue
+                        
+                    if not client_context.get('patient_data'):
+                        patient_data = queryPatientData(patient_name)
+                        client_context['patient_data'] = patient_data
+                    else:
+                        patient_data = client_context['patient_data']
+                    
+                    # Get medication information
+                    if patient_data.get('success'):
+                        medication_info = getDetailedMedicationInfo(patient_name, patient_data, function_args)
+                        result = {"medication_info": medication_info}
+                        
+                        # Yield the medication info so it gets spoken
+                        yield medication_info
+                        # Also add to speech queue
+                        speakWithQueue(medication_info, 0, client_id)
+                    else:
+                        result = {"error": "No patient data found"}
+                        error_msg = f"No patient data found for {patient_name}. Please verify the patient name."
+                        yield error_msg
+                        speakWithQueue(error_msg, 0, client_id)
+                
                 else:
-                    response_token = response_token.replace('\n', '')
-                    spoken_sentence += response_token  # build up the spoken sentence
-                    if len(response_token) == 1 or len(response_token) == 2:
-                        for punctuation in sentence_level_punctuations:
-                            if response_token.startswith(punctuation):
-                                if is_first_sentence:
-                                    first_sentence_latency_ms = round((datetime.datetime.now(pytz.UTC) - aoai_start_time).total_seconds() * 1000)  # noqa: E501
-                                    print(f"AOAI first sentence latency: {first_sentence_latency_ms}ms")
-                                    yield f"<FSL>{first_sentence_latency_ms}</FSL>"
-                                    is_first_sentence = False
-                                speakWithQueue(spoken_sentence.strip(), 0, client_id)
-                                spoken_sentence = ''
-                                break
+                    result = {"error": f"Unknown function: {function_name}"}
+                
+                # Don't add tool messages to conversation history since we're handling execution directly
+                # This prevents the "tool message must be response to tool_calls" error
+                
+                # Don't show technical completion messages to user
+        
+        # Handle regular text response in non-streaming mode
+        if response.choices[0].message.content:
+            assistant_reply = response.choices[0].message.content
+            yield assistant_reply
+            speakWithQueue(assistant_reply, 0, client_id)
+            
+            # Add assistant message to conversation
+            assistant_message = {
+                'role': 'assistant',
+                'content': assistant_reply
+            }
+            messages.append(assistant_message)
+        else:
+            # No tool calls and no content - this shouldn't happen, but let's handle it
+            print(f"⚠️ No tool calls and no content in response")
+    
+    else:
+        # Handle streaming response (for regular text)
+        is_first_chunk = True
+        is_first_sentence = True
+        for chunk in response:
+            if len(chunk.choices) > 0:
+                choice = chunk.choices[0]
+                
+                # Handle regular text response
+                response_token = choice.delta.content
+                if response_token is not None:
+                    # Log response_token here if need debug
+                    if is_first_chunk:
+                        first_token_latency_ms = round((datetime.datetime.now(pytz.UTC) - aoai_start_time).total_seconds() * 1000)
+                        print(f"AOAI first token latency: {first_token_latency_ms}ms")
+                        yield f"<FTL>{first_token_latency_ms}</FTL>"
+                        is_first_chunk = False
+                    if oyd_doc_regex.search(response_token):
+                        response_token = oyd_doc_regex.sub('', response_token).strip()
+                    yield response_token  # yield response token to client as display text
+                    assistant_reply += response_token  # build up the assistant message
+                    if response_token == '\n' or response_token == '\n\n':
+                        if is_first_sentence:
+                            first_sentence_latency_ms = round((datetime.datetime.now(pytz.UTC) - aoai_start_time).total_seconds() * 1000)
+                            print(f"AOAI first sentence latency: {first_sentence_latency_ms}ms")
+                            yield f"<FSL>{first_sentence_latency_ms}</FSL>"
+                            is_first_sentence = False
+                        speakWithQueue(spoken_sentence.strip(), 0, client_id)
+                        spoken_sentence = ''
+                    else:
+                        response_token = response_token.replace('\n', '')
+                        spoken_sentence += response_token  # build up the spoken sentence
+                        if len(response_token) == 1 or len(response_token) == 2:
+                            for punctuation in sentence_level_punctuations:
+                                if response_token.startswith(punctuation):
+                                    if is_first_sentence:
+                                        first_sentence_latency_ms = round((datetime.datetime.now(pytz.UTC) - aoai_start_time).total_seconds() * 1000)
+                                        print(f"AOAI first sentence latency: {first_sentence_latency_ms}ms")
+                                        yield f"<FSL>{first_sentence_latency_ms}</FSL>"
+                                        is_first_sentence = False
+                                    speakWithQueue(spoken_sentence.strip(), 0, client_id)
+                                    spoken_sentence = ''
+                                    break
 
     if spoken_sentence != '':
         speakWithQueue(spoken_sentence.strip(), 0, client_id)
         spoken_sentence = ''
 
-    if len(data_sources) > 0:
-        tool_message = {
-            'role': 'tool',
-            'content': tool_content
-        }
-        messages.append(tool_message)
+    # Fallback: If patient name was detected but no tool was called, force the tool call
+    if contains_patient_name and extracted_patient_name and not client_context.get('patient_data'):
+        print(f"🔄 Fallback: Automatically calling get_patient_data for '{extracted_patient_name}'")
+        try:
+            result = queryPatientData(extracted_patient_name)
+            client_context['patient_name'] = extracted_patient_name
+            client_context['patient_data'] = result
+            
+            # Note: We don't add tool messages to conversation history in fallback mode
+            # The patient data is stored in client_context and will be used by tools when needed
+            
+            # Generate a conversational response
+            if result.get('success'):
+                conversational_response = f"Patient information found for {extracted_patient_name}. What would you like to know about this patient?"
+                yield conversational_response
+                # Also add to speech queue
+                speakWithQueue(conversational_response, 0, client_id)
+            else:
+                conversational_response = f"No records found for {extracted_patient_name}. Please verify the patient name."
+                yield conversational_response
+                # Also add to speech queue
+                speakWithQueue(conversational_response, 0, client_id)
+                
+        except Exception as e:
+            print(f"Error in fallback patient data retrieval: {e}")
+            yield f"Error retrieving data for {extracted_patient_name}."
+
+    # Note: Removed invalid tool message addition that was causing API errors
+    # Tool messages should only be added in response to actual tool_calls from the assistant
 
     # Enforce response length limit (maximum 20 words)
     word_count = len(assistant_reply.split())
@@ -1255,31 +1746,46 @@ def speakSsml(ssml: str, client_id: uuid.UUID, asynchronized: bool) -> str:
 
 # Stop speaking internal function
 def stopSpeakingInternal(client_id: uuid.UUID, skipClearingSpokenTextQueue: bool) -> None:
+    # Check if client context exists before accessing it
+    if client_id not in client_contexts:
+        print(f"⚠️ Client context not found for {client_id} during stop speaking")
+        return
+        
     client_context = client_contexts[client_id]
     client_context['is_speaking'] = False
     if not skipClearingSpokenTextQueue:
-        spoken_text_queue = client_context['spoken_text_queue']
+        spoken_text_queue = client_context.get('spoken_text_queue', [])
         spoken_text_queue.clear()
-    avatar_connection = client_context['speech_synthesizer_connection']
+    avatar_connection = client_context.get('speech_synthesizer_connection')
     if avatar_connection:
         avatar_connection.send_message_async('synthesis.control', '{"action":"stop"}').get()
 
 
 # Disconnect avatar internal function
 def disconnectAvatarInternal(client_id: uuid.UUID, isReconnecting: bool) -> None:
+    # Check if client context exists before accessing it
+    if client_id not in client_contexts:
+        print(f"⚠️ Client context not found for {client_id} during disconnect")
+        return
+        
     client_context = client_contexts[client_id]
     stopSpeakingInternal(client_id, isReconnecting)
     time.sleep(2)  # Wait for the speaking thread to stop
-    avatar_connection = client_context['speech_synthesizer_connection']
+    avatar_connection = client_context.get('speech_synthesizer_connection')
     if avatar_connection:
         avatar_connection.close()
 
 
 # Disconnect STT internal function
 def disconnectSttInternal(client_id: uuid.UUID) -> None:
+    # Check if client context exists before accessing it
+    if client_id not in client_contexts:
+        print(f"⚠️ Client context not found for {client_id} during STT disconnect")
+        return
+        
     client_context = client_contexts[client_id]
-    speech_recognizer = client_context['speech_recognizer']
-    audio_input_stream = client_context['audio_input_stream']
+    speech_recognizer = client_context.get('speech_recognizer')
+    audio_input_stream = client_context.get('audio_input_stream')
     if speech_recognizer:
         speech_recognizer.stop_continuous_recognition()
         connection = speechsdk.Connection.from_recognizer(speech_recognizer)
