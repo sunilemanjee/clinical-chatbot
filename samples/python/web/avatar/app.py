@@ -59,7 +59,7 @@ elastic_index_name = os.environ.get('ELASTIC_INDEX_NAME')  # e.g. clinical-patie
 enable_websockets = True  # Enable websockets between client and server for real-time communication optimization
 enable_vad = False  # Enable voice activity detection (VAD) for interrupting the avatar speaking
 enable_token_auth_for_speech = False  # Enable token authentication for speech service
-default_tts_voice = 'en-US-JennyMultilingualV2Neural'  # Default TTS voice
+default_tts_voice = 'en-US-AmandaMultilingualNeural'  # Default TTS voice
 sentence_level_punctuations = ['.', '?', '!', ':', ';', '。', '？', '！', '：', '；']  # Punctuations that indicate the end of a sentence
 enable_quick_reply = False  # Enable quick reply for certain chat models which take longer time to respond
 quick_replies = ['Let me take a look.', 'Let me check.', 'One moment, please.']  # Quick reply reponses
@@ -270,8 +270,8 @@ def connectAvatar() -> Response:
         for header, value in request.headers.items():
             print(f"  {header}: {value}")
         
-        avatar_character = request.headers.get('AvatarCharacter') or 'lisa'
-        avatar_style = request.headers.get('AvatarStyle') or 'casual-sitting'
+        avatar_character = request.headers.get('AvatarCharacter') or 'lori'
+        avatar_style = request.headers.get('AvatarStyle') or 'graceful'
         # Debug: Print avatar configuration values
         print(f"Avatar config - Character: {avatar_character}, Style: {avatar_style}")
         background_color = '#FFFFFFFF' if request.headers.get('BackgroundColor') is None else request.headers.get('BackgroundColor')
@@ -283,6 +283,9 @@ def connectAvatar() -> Response:
         video_crop = 'false' if request.headers.get('VideoCrop') is None else request.headers.get('VideoCrop')
         avatar_config = {
             'synthesis': {
+                'synthesisConfig': {
+                    'voice': client_context['tts_voice']
+                },
                 'video': {
                     'protocol': {
                         'name': "WebRTC",
