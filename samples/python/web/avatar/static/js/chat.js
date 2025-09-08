@@ -374,6 +374,8 @@ function connectToAvatarService(peerConnection) {
         'ClientId': clientId,
         'AvatarCharacter': document.getElementById('talkingAvatarCharacter').value,
         'AvatarStyle': document.getElementById('talkingAvatarStyle').value,
+        'BackgroundColor': document.getElementById('backgroundColor').value,
+        'BackgroundImageUrl': document.getElementById('backgroundImageUrl').value,
         'IsCustomAvatar': document.getElementById('customizedAvatar').checked
     }
 
