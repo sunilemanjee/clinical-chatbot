@@ -188,7 +188,7 @@ def connectAvatar() -> Response:
             'speech_recognizer': None,
             'azure_openai_deployment_name': azure_openai_deployment_name,
             'cognitive_search_index_name': cognitive_search_index_name,
-            'tts_voice': default_tts_voice,
+            'tts_voice': e ,
             'custom_voice_endpoint_id': None,
             'personal_voice_speaker_profile_id': None,
             'speech_synthesizer': None,
@@ -309,10 +309,10 @@ def connectAvatar() -> Response:
                                 'y': 1080
                             }
                         },
-                        'bitrate': 1000000,
-                        # Optimize for low latency
-                        'frameRate': 30,
-                        'keyframeInterval': 30,
+                        'bitrate': 500000,  # Reduced from 1Mbps to 500kbps for lower latency
+                        # Optimize for ultra-low latency
+                        'frameRate': 24,  # Reduced from 30 to 24 FPS for lower latency
+                        'keyframeInterval': 12,  # Reduced from 30 to 12 for faster keyframe recovery
                         'latencyMode': 'ultraLowLatency'
                     },
                     'talkingAvatar': {
@@ -324,6 +324,11 @@ def connectAvatar() -> Response:
                             'image': {
                                 'url': background_image_url
                             }
+                        },
+                        # Additional settings for better synchronization
+                        'synchronization': {
+                            'audioVideoSync': True,  # Enable audio-video synchronization
+                            'lipSyncAccuracy': 'high'  # High accuracy lip sync
                         }
                     }
                 }

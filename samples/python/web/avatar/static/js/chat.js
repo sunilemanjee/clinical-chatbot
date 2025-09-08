@@ -186,14 +186,16 @@ function setupWebSocket() {
 
 // Prepare peer connection for WebRTC
 function preparePeerConnection() {
-    // Create WebRTC peer connection
+    // Create WebRTC peer connection with optimized settings for low latency
     let peerConnection = new RTCPeerConnection({
         iceServers: [{
             urls: [ iceServerUrl ],
             username: iceServerUsername,
             credential: iceServerCredential
         }],
-        iceTransportPolicy: 'relay'
+        iceTransportPolicy: 'all',  // Changed from 'relay' to 'all' for lower latency
+        bundlePolicy: 'max-bundle',  // Optimize for lower latency
+        rtcpMuxPolicy: 'require'  // Enable RTCP multiplexing for lower latency
     })
 
     // Fetch WebRTC video stream and mount it to an HTML video element
@@ -203,6 +205,7 @@ function preparePeerConnection() {
             audioElement.id = 'audioPlayer'
             audioElement.srcObject = event.streams[0]
             audioElement.autoplay = false
+            audioElement.preload = 'none'  // Optimize for low latency
             audioElement.addEventListener('loadeddata', () => {
                 audioElement.play()
             })
@@ -228,11 +231,13 @@ function preparePeerConnection() {
             videoElement.id = 'videoPlayer'
             videoElement.srcObject = event.streams[0]
             videoElement.autoplay = false
+            videoElement.preload = 'none'  // Optimize for low latency
             videoElement.addEventListener('loadeddata', () => {
                 videoElement.play()
             })
 
             videoElement.playsInline = true
+            videoElement.muted = false  // Ensure audio is not muted for synchronization
             videoElement.style.width = '0.5px'
             document.getElementById('remoteVideo').appendChild(videoElement)
 
@@ -335,9 +340,15 @@ function preparePeerConnection() {
         }
     }
 
-    // Offer to receive 1 audio, and 1 video track
-    peerConnection.addTransceiver('video', { direction: 'sendrecv' })
-    peerConnection.addTransceiver('audio', { direction: 'sendrecv' })
+    // Offer to receive 1 audio, and 1 video track with optimized settings
+    peerConnection.addTransceiver('video', { 
+        direction: 'sendrecv',
+        streams: []  // Ensure proper stream handling
+    })
+    peerConnection.addTransceiver('audio', { 
+        direction: 'sendrecv',
+        streams: []  // Ensure proper stream handling
+    })
 
     // Connect to avatar service when ICE candidates gathering is done
     iceGatheringDone = false

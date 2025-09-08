@@ -245,6 +245,7 @@ ul {
     width: 360px;
     height: 480px;
     font-size: medium;
+    color: #FFFFFF;  /* Set text color to white */
 }
 
 @media screen and (max-width: 650px) {
