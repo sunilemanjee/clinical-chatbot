@@ -58,9 +58,23 @@ function preparePeerConnection() {
         const mediaPlayer = document.createElement(event.track.kind)
         mediaPlayer.id = event.track.kind
         mediaPlayer.srcObject = event.streams[0]
-        mediaPlayer.autoplay = false
+        mediaPlayer.autoplay = true  // Enable autoplay for immediate playback
+        mediaPlayer.preload = 'auto'  // Preload data to prevent cutoff
+        
+        // Ensure media plays immediately when data is available
         mediaPlayer.addEventListener('loadeddata', () => {
-            mediaPlayer.play()
+            mediaPlayer.play().catch(e => {
+                console.log('Autoplay prevented, will play on user interaction:', e)
+            })
+        })
+        
+        // Additional event listeners for better audio handling
+        mediaPlayer.addEventListener('canplay', () => {
+            if (mediaPlayer.paused) {
+                mediaPlayer.play().catch(e => {
+                    console.log('Play prevented, will play on user interaction:', e)
+                })
+            }
         })
 
         document.getElementById('remoteVideo').appendChild(mediaPlayer)
@@ -270,8 +284,26 @@ function htmlEncode(text) {
     return String(text).replace(/[&<>"'\/]/g, (match) => entityMap[match])
 }
 
+// Pre-initialize audio context to reduce latency
+function initializeAudioContext() {
+    try {
+        // Create a silent audio context to warm up the audio system
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+        if (audioContext.state === 'suspended') {
+            audioContext.resume()
+        }
+        console.log('Audio context initialized for better performance')
+    } catch (e) {
+        console.log('Audio context initialization failed:', e)
+    }
+}
+
 window.onload = () => {
     clientId = document.getElementById('clientId').value
+    
+    // Initialize audio context early to reduce latency
+    initializeAudioContext()
+    
     fetchIceToken() // Fetch ICE token and prepare peer connection on page load
     setInterval(fetchIceToken, 60 * 1000) // Fetch ICE token and prepare peer connection every 1 minute
 }

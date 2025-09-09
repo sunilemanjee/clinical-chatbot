@@ -186,16 +186,18 @@ function setupWebSocket() {
 
 // Prepare peer connection for WebRTC
 function preparePeerConnection() {
-    // Create WebRTC peer connection with optimized settings for low latency
+    // Create WebRTC peer connection with optimized settings for audio streaming
     let peerConnection = new RTCPeerConnection({
         iceServers: [{
             urls: [ iceServerUrl ],
             username: iceServerUsername,
             credential: iceServerCredential
         }],
-        iceTransportPolicy: 'all',  // Changed from 'relay' to 'all' for lower latency
-        bundlePolicy: 'max-bundle',  // Optimize for lower latency
-        rtcpMuxPolicy: 'require'  // Enable RTCP multiplexing for lower latency
+        iceTransportPolicy: 'all',  // Use all transport types for better connectivity
+        bundlePolicy: 'max-bundle',  // Bundle audio and video for efficiency
+        rtcpMuxPolicy: 'require',  // Enable RTCP multiplexing
+        // Add audio-specific configuration
+        sdpSemantics: 'unified-plan'  // Use unified plan for better audio handling
     })
 
     // Fetch WebRTC video stream and mount it to an HTML video element
@@ -204,20 +206,69 @@ function preparePeerConnection() {
             let audioElement = document.createElement('audio')
             audioElement.id = 'audioPlayer'
             audioElement.srcObject = event.streams[0]
-            audioElement.autoplay = false
-            audioElement.preload = 'none'  // Optimize for low latency
+            audioElement.autoplay = true  // Enable autoplay for immediate audio
+            audioElement.preload = 'auto'  // Preload audio data to prevent cutoff
             audioElement.crossOrigin = 'anonymous'  // Enable CORS for better streaming
+            
+            // Configure audio for continuous streaming
+            audioElement.loop = false
+            audioElement.controls = false
+            audioElement.muted = false
+            
+            // Ensure audio plays immediately when data is available
             audioElement.addEventListener('loadeddata', () => {
-                audioElement.play()
+                console.log('Audio data loaded, attempting to play')
+                audioElement.play().catch(e => {
+                    console.log('Autoplay prevented, will play on user interaction:', e)
+                })
             })
             
-            // Optimize audio buffering for lower latency
+            // Optimize audio buffering for continuous streaming
             audioElement.addEventListener('canplay', () => {
+                console.log('Audio can play, ensuring it starts')
                 audioElement.currentTime = 0  // Reset to beginning for immediate playback
+                // Ensure audio is ready to play
+                if (audioElement.paused) {
+                    audioElement.play().catch(e => {
+                        console.log('Play prevented, will play on user interaction:', e)
+                    })
+                }
+            })
+
+            // Handle audio ready state changes
+            audioElement.addEventListener('canplaythrough', () => {
+                console.log('Audio ready to play through without interruption')
+            })
+            
+            // Monitor audio progress to detect interruptions
+            audioElement.addEventListener('waiting', () => {
+                console.log('Audio waiting for data - potential buffer underrun')
+            })
+            
+            audioElement.addEventListener('stalled', () => {
+                console.log('Audio stalled - attempting to resume')
+                audioElement.play().catch(e => {
+                    console.log('Failed to resume after stall:', e)
+                })
+            })
+            
+            audioElement.addEventListener('suspend', () => {
+                console.log('Audio suspended - attempting to resume')
+                audioElement.play().catch(e => {
+                    console.log('Failed to resume after suspend:', e)
+                })
             })
 
             audioElement.onplaying = () => {
-                console.log(`WebRTC ${event.track.kind} channel connected.`)
+                console.log(`WebRTC ${event.track.kind} channel connected and playing.`)
+            }
+            
+            audioElement.onpause = () => {
+                console.log('Audio paused unexpectedly')
+            }
+            
+            audioElement.onended = () => {
+                console.log('Audio ended')
             }
 
             // Clean up existing audio element if there is any
@@ -325,6 +376,19 @@ function preparePeerConnection() {
 
                 isSpeaking = true
                 document.getElementById('stopSpeaking').disabled = false
+                
+                // Ensure audio is ready when avatar starts speaking
+                const audioPlayer = document.getElementById('audioPlayer')
+                if (audioPlayer) {
+                    console.log('Avatar starting to speak - ensuring audio is ready')
+                    if (audioPlayer.paused) {
+                        audioPlayer.play().catch(e => {
+                            console.log('Failed to start audio for speaking:', e)
+                        })
+                    }
+                    // Reset audio position to ensure continuous playback
+                    audioPlayer.currentTime = 0
+                }
             } else if (e.data.includes("EVENT_TYPE_SWITCH_TO_IDLE")) {
                 isSpeaking = false
                 lastSpeakTime = new Date()
@@ -365,10 +429,26 @@ function preparePeerConnection() {
         direction: 'sendrecv',
         streams: []  // Ensure proper stream handling
     })
-    peerConnection.addTransceiver('audio', { 
+    
+    // Configure audio transceiver for better streaming
+    const audioTransceiver = peerConnection.addTransceiver('audio', { 
         direction: 'sendrecv',
         streams: []  // Ensure proper stream handling
     })
+    
+    // Set audio codec preferences for better quality and lower latency
+    if (audioTransceiver.sender && audioTransceiver.sender.getCapabilities) {
+        const audioCapabilities = audioTransceiver.sender.getCapabilities()
+        if (audioCapabilities && audioCapabilities.codecs) {
+            // Prefer Opus codec for better audio quality
+            const opusCodec = audioCapabilities.codecs.find(codec => 
+                codec.mimeType.includes('opus')
+            )
+            if (opusCodec) {
+                audioTransceiver.setCodecPreferences([opusCodec])
+            }
+        }
+    }
 
     // Connect to avatar service when ICE candidates gathering is done
     iceGatheringDone = false
@@ -615,8 +695,44 @@ function checkHung() {
     }
 }
 
+// Pre-initialize audio context to reduce latency
+function initializeAudioContext() {
+    try {
+        // Create a silent audio context to warm up the audio system
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)()
+        if (audioContext.state === 'suspended') {
+            audioContext.resume()
+        }
+        console.log('Audio context initialized for better performance')
+    } catch (e) {
+        console.log('Audio context initialization failed:', e)
+    }
+}
+
+// Monitor audio continuity and prevent interruptions
+function monitorAudioContinuity() {
+    const audioPlayer = document.getElementById('audioPlayer')
+    if (!audioPlayer) return
+    
+    // Check if audio is stalled or paused unexpectedly
+    if (audioPlayer.readyState >= 2 && audioPlayer.paused && !audioPlayer.ended) {
+        console.log('Audio paused unexpectedly, attempting to resume')
+        audioPlayer.play().catch(e => {
+            console.log('Failed to resume audio:', e)
+        })
+    }
+    
+    // Check for buffer underruns
+    if (audioPlayer.readyState < 3 && audioPlayer.currentTime > 0) {
+        console.log('Audio buffer underrun detected')
+    }
+}
+
 window.onload = () => {
     clientId = document.getElementById('clientId').value
+
+    // Initialize audio context early to reduce latency
+    initializeAudioContext()
 
     fetchIceToken() // Fetch ICE token and prepare peer connection on page load
     setInterval(fetchIceToken, 60 * 1000) // Fetch ICE token and prepare peer connection every 1 minute
@@ -631,6 +747,10 @@ window.onload = () => {
     setInterval(() => {
         checkHung()
     }, 2000) // Check session activity every 2 seconds
+    
+    setInterval(() => {
+        monitorAudioContinuity()
+    }, 500) // Monitor audio continuity every 500ms
 }
 
 window.startSession = () => {
@@ -947,11 +1067,34 @@ window.microphone = () => {
             connectAvatar()
         }
 
-        setTimeout(() => {
-            document.getElementById('audioPlayer').play()
-        }, 5000)
+        // Ensure audio is ready before playing
+        const audioPlayer = document.getElementById('audioPlayer')
+        if (audioPlayer) {
+            setTimeout(() => {
+                audioPlayer.play().catch(e => {
+                    console.log('Audio play failed, retrying:', e)
+                    // Retry after a short delay
+                    setTimeout(() => {
+                        audioPlayer.play().catch(err => {
+                            console.log('Audio play retry failed:', err)
+                        })
+                    }, 100)
+                })
+            }, 2000) // Reduced from 5000ms to 2000ms for faster response
+        }
     } else {
-        document.getElementById('audioPlayer').play()
+        const audioPlayer = document.getElementById('audioPlayer')
+        if (audioPlayer) {
+            audioPlayer.play().catch(e => {
+                console.log('Audio play failed:', e)
+                // Retry after a short delay
+                setTimeout(() => {
+                    audioPlayer.play().catch(err => {
+                        console.log('Audio play retry failed:', err)
+                    })
+                }, 100)
+            })
+        }
     }
 
     document.getElementById('microphone').disabled = true

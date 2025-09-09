@@ -29,16 +29,10 @@ An intelligent clinical assistant powered by Azure AI services, featuring a conv
 
 ### Setup
 
-1. **Clone and setup environment:**
+1. **Create virtual environment:**
 ```bash
 # Create virtual environment
 python3 -m venv avatar-env
-
-# Activate virtual environment
-source avatar-env/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
 ```
 
 2. **Configure environment variables:**
@@ -54,33 +48,34 @@ AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
 AZURE_OPENAI_API_KEY=your_openai_key_here
 AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
 
-# Elastic
+# Elasticsearch (for MCP integration)
 ELASTIC_URL="https://xxxxx.elastic.cloud:443"
 ELASTIC_API_KEY="xxx"
+ELASTIC_INDEX_NAME="clinical-patient-data"
 ```
 
 3. **Run the setup script:**
 ```bash
-# This script will load environment variables and prepare the application
+# This script will activate the virtual environment, install dependencies, and load environment variables
 source ./setup_env.sh
 ```
 
 4. **Run the application:**
 ```bash
-# Option 1: Run with MCP (Model Context Protocol) integration
+# Run the MCP Clinical Assistant (recommended)
 ./run_mcp_clinical_assistant.sh
 
-# Option 2: Run standard Flask application
-python -m flask run -h 0.0.0.0 -p 5000
+# Optional: Specify a different port
+./run_mcp_clinical_assistant.sh -p 5000
 ```
 
 5. **Access the application:**
-- Clinical chat: `http://localhost:5000/chat`
-- Basic demo: `http://localhost:5000/basic`
+- Clinical chat: `http://localhost:8080/chat` (default port)
+- Basic demo: `http://localhost:8080/basic`
 
 ### Quick Test
 To verify your setup is working correctly:
-1. Open `http://localhost:5000/basic` in your browser
+1. Open `http://localhost:8080/basic` in your browser
 2. Click the microphone button and speak a simple phrase
 3. Check that the avatar responds with speech and animation
 
@@ -89,7 +84,7 @@ TTS Avatar is available in: Southeast Asia, North Europe, West Europe, Sweden Ce
 
 ## MCP (Model Context Protocol) Integration
 
-The application now supports MCP integration for enhanced clinical assistance capabilities:
+The application is built with MCP integration as the primary way to run the clinical assistant, providing enhanced clinical assistance capabilities:
 
 ### MCP Features
 - **Enhanced Clinical Context**: Access to structured clinical data and drug interaction information
@@ -97,22 +92,30 @@ The application now supports MCP integration for enhanced clinical assistance ca
 - **Real-time Data Access**: Direct integration with clinical databases and knowledge bases
 - **Improved Accuracy**: Context-aware responses based on actual patient data
 
-### Running with MCP
-Use the MCP clinical assistant script for the full-featured experience:
+### Running the MCP Clinical Assistant
+The MCP clinical assistant is the recommended way to run the application:
 ```bash
 ./run_mcp_clinical_assistant.sh
 ```
 
 This script will:
-1. Start the MCP server with clinical data access
-2. Launch the Flask application with MCP integration
-3. Enable advanced clinical functions and context-aware responses
+1. Activate the virtual environment and install dependencies
+2. Start the MCP server with clinical data access
+3. Launch the Flask application with MCP integration
+4. Enable advanced clinical functions and context-aware responses
+
+The script runs on port 8080 by default, but you can specify a different port:
+```bash
+./run_mcp_clinical_assistant.sh -p 5000
+```
 
 For more details about MCP integration, see [README_MCP.md](README_MCP.md).
 
 ### Key Components
 
-**setup_env.sh**: Environment setup script that loads your Azure credentials and prepares the application environment.
+**setup_env.sh**: Environment setup script that activates the virtual environment, installs dependencies, and loads your Azure credentials from variables.env.
+
+**run_mcp_clinical_assistant.sh**: Main startup script that runs the complete MCP clinical assistant with both the MCP server and Flask application.
 
 **vad_iterator.py**: Voice Activity Detection module that processes real-time audio streams to detect when users are speaking, enabling more natural conversation flow.
 
@@ -290,9 +293,10 @@ Always consult with qualified healthcare professionals for medical decisions.
 
 **Setup Issues:**
 - Ensure Python 3.7+ is installed
-- Verify virtual environment is activated
-- Check that all dependencies are installed correctly
-- Run `source ./setup_env.sh` before starting the application
+- Create virtual environment with `python3 -m venv avatar-env`
+- Run `source ./setup_env.sh` to activate environment and install dependencies
+- Verify `variables.env` file contains all required Azure credentials
+- Use `./run_mcp_clinical_assistant.sh` to start the application
 
 ## Contributing
 
