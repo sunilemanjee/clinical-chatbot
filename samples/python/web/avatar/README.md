@@ -21,57 +21,79 @@ An intelligent clinical assistant powered by Azure AI services, featuring a conv
 ## Quick Start
 
 ### Prerequisites
-- Python 3.7 or later
-- Azure AI Services resources:
-  - **Speech Service** (with TTS Avatar support)
-  - **Azure OpenAI Service** 
-  - **Cognitive Search** (optional, for medical knowledge base)
+- **Python 3.7 or later**
+- **Azure AI Services resources:**
+  - **Speech Service** (with TTS Avatar support) - Required
+  - **Azure OpenAI Service** - Required
+  - **Elasticsearch** (for MCP integration) - Required for full functionality
 
-### Setup
+### Complete Setup Process
 
-1. **Create virtual environment:**
+Follow these steps in order to get the application running:
+
+#### Step 1: Create Python Virtual Environment
 ```bash
 # Create virtual environment
 python3 -m venv avatar-env
 ```
 
-2. **Configure environment variables:**
+#### Step 2: Configure Environment Variables
 Create a `variables.env` file with your Azure credentials:
 ```bash
-# Speech Service
+# Copy the template file
+cp variables.env.template variables.env
+
+# Edit variables.env with your actual Azure credentials
+# Required variables:
 SPEECH_REGION=eastus2
 SPEECH_KEY=your_speech_key_here
-SPEECH_RESOURCE_URL=/subscriptions/your_subscription/resourceGroups/your_rg/providers/Microsoft.CognitiveServices/accounts/your_account
-
-# Azure OpenAI
 AZURE_OPENAI_ENDPOINT=https://your-openai.openai.azure.com/
 AZURE_OPENAI_API_KEY=your_openai_key_here
 AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
 
-# Elasticsearch (for MCP integration)
+# Required for MCP integration:
 ELASTIC_URL="https://xxxxx.elastic.cloud:443"
 ELASTIC_API_KEY="xxx"
 ELASTIC_INDEX_NAME="clinical-patient-data"
 ```
 
-3. **Run the setup script:**
+#### Step 3: Setup Environment and Install Dependencies
 ```bash
-# This script will activate the virtual environment, install dependencies, and load environment variables
+# This script activates the virtual environment, installs dependencies, and loads environment variables
 source ./setup_env.sh
 ```
 
-4. **Run the application:**
+#### Step 4: Ingest Clinical Data (Required for MCP functionality)
 ```bash
-# Run the MCP Clinical Assistant (recommended)
+# Navigate to data directory and run ingestion script
+cd data/
+./ingest_to_elasticsearch.sh
+cd ..
+```
+
+#### Step 5: Run the MCP Clinical Assistant
+```bash
+# Start the complete application with MCP integration
 ./run_mcp_clinical_assistant.sh
 
 # Optional: Specify a different port
 ./run_mcp_clinical_assistant.sh -p 5000
 ```
 
-5. **Access the application:**
-- Clinical chat: `http://localhost:8080/chat` (default port)
-- Basic demo: `http://localhost:8080/basic`
+#### Step 6: Access the Application
+- **Clinical chat**: `http://localhost:8080/chat` (default port)
+- **Basic demo**: `http://localhost:8080/basic`
+
+> **Important**: The data ingestion step (Step 4) is required for the MCP clinical assistant to function properly. Without it, the application will start but won't have access to clinical data for enhanced responses.
+
+### What Each Step Does
+
+- **Step 1**: Creates an isolated Python environment to avoid conflicts with system packages
+- **Step 2**: Configures Azure service credentials and Elasticsearch connection details
+- **Step 3**: Installs all required Python packages and loads environment variables
+- **Step 4**: Loads clinical patient data and drug interaction information into Elasticsearch for AI context
+- **Step 5**: Starts both the MCP server (for clinical data access) and Flask web application
+- **Step 6**: Provides web interface for interacting with the clinical assistant
 
 ### Quick Test
 To verify your setup is working correctly:
@@ -93,13 +115,14 @@ The application is built with MCP integration as the primary way to run the clin
 - **Improved Accuracy**: Context-aware responses based on actual patient data
 
 ### Running the MCP Clinical Assistant
-The MCP clinical assistant is the recommended way to run the application:
+The MCP clinical assistant is the recommended way to run the application. **Important**: You must complete all setup steps (including data ingestion) before running this script.
+
 ```bash
 ./run_mcp_clinical_assistant.sh
 ```
 
 This script will:
-1. Activate the virtual environment and install dependencies
+1. Activate the virtual environment and install MCP dependencies
 2. Start the MCP server with clinical data access
 3. Launch the Flask application with MCP integration
 4. Enable advanced clinical functions and context-aware responses
@@ -108,6 +131,8 @@ The script runs on port 8080 by default, but you can specify a different port:
 ```bash
 ./run_mcp_clinical_assistant.sh -p 5000
 ```
+
+> **Note**: If you haven't completed the data ingestion step, the MCP server will start but won't have access to clinical data, limiting its functionality.
 
 For more details about MCP integration, see [README_MCP.md](README_MCP.md).
 
@@ -293,10 +318,15 @@ Always consult with qualified healthcare professionals for medical decisions.
 
 **Setup Issues:**
 - Ensure Python 3.7+ is installed
-- Create virtual environment with `python3 -m venv avatar-env`
-- Run `source ./setup_env.sh` to activate environment and install dependencies
-- Verify `variables.env` file contains all required Azure credentials
-- Use `./run_mcp_clinical_assistant.sh` to start the application
+- Follow the complete setup process in order:
+  1. Create virtual environment: `python3 -m venv avatar-env`
+  2. Configure `variables.env` with all required Azure credentials
+  3. Run `source ./setup_env.sh` to activate environment and install dependencies
+  4. **Important**: Run data ingestion: `cd data/ && ./ingest_to_elasticsearch.sh && cd ..`
+  5. Start application: `./run_mcp_clinical_assistant.sh`
+- Verify `variables.env` file contains all required Azure credentials (Speech, OpenAI, Elasticsearch)
+- Ensure data ingestion completed successfully before running the MCP clinical assistant
+- Check that all environment variables are properly loaded by the setup script
 
 ## Contributing
 
